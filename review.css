@@ -1696,3 +1696,9 @@ a.btn {
   color: var(--warning);
   font-size: 12.5px;
 }
+
+.field.field-inline {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}

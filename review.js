@@ -24,7 +24,7 @@ import { trainingPriority } from "./practical-model.js";
 import { computeDecisionQuality } from "./decision-quality.js";
 import { drillHint, drillPrompt, drillRejection, drillSuccess, judgeDrillAttempt } from "./drills.js";
 import { dueCount, localDate, puzzlesFromDecisions } from "./deck.js";
-import { gameAccuracy, gameDate, summarizeGame, userDecisions, userResult } from "./weakness.js";
+import { confirmedSide, gameAccuracy, gameDate, summarizeGame, userDecisions, userResult } from "./weakness.js";
 import { gameKeyFor, loadTraining, saveReview, webStorageArea } from "./training-store.js";
 import { describeVariation, moveToUci, parseUciMove, replayVariation } from "./variation.js";
 import {
@@ -314,6 +314,7 @@ const dom = {
   cancelPgnBtn: document.getElementById("cancelPgnBtn"),
   loadPgnConfirmBtn: document.getElementById("loadPgnConfirmBtn"),
   pgnColorSelect: document.getElementById("pgnColorSelect"),
+  pgnPracticeCheck: document.getElementById("pgnPracticeCheck"),
   pgnTextarea: document.getElementById("pgnTextarea"),
   recentGamesWrap: document.getElementById("recentGamesWrap"),
   recentGamesList: document.getElementById("recentGamesList"),
@@ -854,57 +855,54 @@ async function refreshPracticeBadge() {
   }
 }
 
-/**
- * The user's side when it is known: chosen in Load PGN, reopened from the Practice page, or matched
- * to the Chess.com username. A Chess.com game where neither player matches isn't the user's game.
- */
-function confirmedColor(meta) {
-  if (meta.colorConfirmed) return meta.playedColor;
-  const user = (meta.username || "").trim().toLowerCase();
-  if (user && meta.white?.username?.toLowerCase() === user) return "w";
-  if (user && meta.black?.username?.toLowerCase() === user) return "b";
-  return null;
-}
-
 /** Save the finished review's summary and the user's mistakes as practice puzzles. */
 async function recordReviewedGame(runId, depth) {
+  dom.trainingNotice.classList.add("hidden");
   const meta = state.gameMeta;
-  const playedColor = meta ? confirmedColor(meta) : null;
-  if (!meta?.pgn || !playedColor) return;
+  if (!meta?.pgn) return;
   try {
-    const data = await loadTraining(trainingArea);
-    if (!data.writable || runId !== state.analysisRunId) return;
-
+    // Read everything from state before the first await: it is consistent only at the end of a finished run.
+    const playedColor = confirmedSide(meta, dom.fallbackUsernameInput.value);
+    if (!playedColor) {
+      if (/^\d+$/.test(String(meta.gameId ?? ""))) {
+        showTrainingNotice("Not saved for practice: ChessBot couldn't tell which side you played. Add your Chess.com username in Settings.");
+      }
+      return;
+    }
     const { initialFen, history } = state.positions.at(-1).searchOptions;
-    const gameKey = await gameKeyFor({ gameId: meta.gameId, initialFen, history });
     const today = localDate();
     const source = { positions: state.positions, evals: state.evals, moveReviews: state.moveReviews, playedColor };
     const decisions = userDecisions(source);
+    const accuracy = gameAccuracy(source);
     const opponent = (playedColor === "w" ? meta.black : meta.white)?.username ?? "";
     const date = gameDate({ endTime: meta.endTime, headers: state.gameHeaders ?? {} }, today);
+    const result = userResult(meta.result, playedColor);
+    const { gameId = null, pgn, timeClass, timeControl = null, endTime = null } = meta;
+
+    const data = await loadTraining(trainingArea);
+    if (!data.writable || runId !== state.analysisRunId) return;
+    const gameKey = await gameKeyFor({ gameId, initialFen, history });
+    if (runId !== state.analysisRunId) return;
+    const previous = data.games.get(gameKey);
+    if (previous?.depth > depth) return;
+
     const summary = summarizeGame({
       gameKey,
-      reviewedAt: data.games.get(gameKey)?.reviewedAt ?? Date.now(),
+      reviewedAt: previous?.reviewedAt ?? Date.now(),
       date,
       color: playedColor,
-      result: userResult(meta.result, playedColor),
-      timeClass: meta.timeClass,
+      result,
+      timeClass,
       opponent,
       depth,
       decisions,
-      ...gameAccuracy(source),
+      ...accuracy,
     });
     const existing = [...data.puzzles.values()].filter((puzzle) => puzzle.gameKey === gameKey);
     const { puzzles, removedIds } = puzzlesFromDecisions({
       gameKey, color: playedColor, opponent, gameDate: date, decisions, today, existing,
     });
-    const game = {
-      ...summary,
-      gameId: meta.gameId ?? null,
-      pgn: meta.pgn,
-      timeControl: meta.timeControl ?? null,
-      endTime: meta.endTime ?? null,
-    };
+    const game = { ...summary, gameId, pgn, timeControl, endTime };
     await saveReview(trainingArea, { game, puzzles, removedIds });
     if (runId === state.analysisRunId) await refreshPracticeBadge();
   } catch {
@@ -2164,7 +2162,7 @@ dom.loadPgnConfirmBtn.addEventListener("click", () => {
     gameId: `manual-${Date.now()}`,
     pgn,
     playedColor: dom.pgnColorSelect.value,
-    colorConfirmed: true,
+    colorConfirmed: dom.pgnPracticeCheck.checked,
     timeClass: "Custom PGN",
   };
   const res = loadGameFromPayload(payload);
@@ -2305,6 +2303,7 @@ async function bootstrap() {
   if (requestedGame) {
     try {
       const record = (await loadTraining(trainingArea)).games.get(requestedGame);
+      if (!record) showTrainingNotice("That game is no longer saved for practice.");
       if (record) {
         const res = loadGameFromPayload({
           gameId: record.gameId, pgn: record.pgn, playedColor: record.color, colorConfirmed: true,

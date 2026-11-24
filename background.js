@@ -196,7 +196,7 @@ function detectPlayedColor(game, primaryUsername) {
   return "w";
 }
 
-function buildGamePayload(game, gameId, primaryUsername) {
+function buildGamePayload(game, gameId, primaryUsername, accountUsername = null) {
   return {
     gameId,
     url: game.url || "",
@@ -206,6 +206,7 @@ function buildGamePayload(game, gameId, primaryUsername) {
     rated: Boolean(game.rated),
     endTime: game.end_time || Math.floor(Date.now() / 1000),
     username: primaryUsername,
+    accountUsername,
     playedColor: detectPlayedColor(game, primaryUsername),
     white: {
       username: game.white?.username || "White",
@@ -250,6 +251,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   (async () => {
     try {
       const { gameId, username, candidateUsernames } = message;
+      const accountUsername = isValidUsername(message.accountUsername) ? message.accountUsername.trim() : null;
       if (!gameId) {
         sendResponse({ ok: false, error: "Missing game ID." });
         return;
@@ -272,7 +274,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
       const { game, matchedUser } = await fetchGameWithRetry(candidates, gameId);
       const primaryUser = candidates[0] || matchedUser;
-      const payload = buildGamePayload(game, gameId, primaryUser);
+      const payload = buildGamePayload(game, gameId, primaryUser, accountUsername);
       await saveGameToStorage(payload);
 
       await chrome.tabs.create({

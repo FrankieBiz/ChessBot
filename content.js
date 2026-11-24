@@ -90,6 +90,21 @@
     return null;
   }
 
+  const NAV_USERNAME_SELECTORS = [
+    "#notifications-request[data-username]",
+    "[data-user-activity-key]",
+    ".nav-user-menu-button[href*='/member/']",
+  ];
+
+  /** The signed-in account's name, from the site navigation only (never the board's player tags). */
+  function detectAccountUsername() {
+    for (const sel of NAV_USERNAME_SELECTORS) {
+      const name = extractUsernameFromElement(document.querySelector(sel));
+      if (isValidUsername(name)) return name.trim();
+    }
+    return null;
+  }
+
   function detectGameUsernames() {
     const candidates = [];
     const addCandidate = (name) => {
@@ -113,12 +128,7 @@
       addCandidate(extractUsernameFromElement(document.querySelector(sel)));
     }
 
-    const navSelectors = [
-      "#notifications-request[data-username]",
-      "[data-user-activity-key]",
-      ".nav-user-menu-button[href*='/member/']",
-    ];
-    for (const sel of navSelectors) {
+    for (const sel of NAV_USERNAME_SELECTORS) {
       addCandidate(extractUsernameFromElement(document.querySelector(sel)));
     }
 
@@ -277,6 +287,7 @@
         gameType: parsed.gameType,
         username,
         candidateUsernames,
+        accountUsername: detectAccountUsername(),
         pageUrl: window.location.href,
       });
 

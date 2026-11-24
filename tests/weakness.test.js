@@ -5,7 +5,7 @@ import { THEMES, gameDate, isLowClock, themeForTag, themeLabel, userResult } fro
 import { parseReviewGame } from "../analysis.js";
 import { computeGameInsights } from "../coach.js";
 import { computeProGameAccuracy, evalToWinWhite } from "../engine.js";
-import { gameAccuracy, reportFilter, summarizeGame, userDecisions, weaknessReport } from "../weakness.js";
+import { confirmedSide, gameAccuracy, reportFilter, summarizeGame, userDecisions, weaknessReport } from "../weakness.js";
 import { decision } from "./fixtures/training.js";
 
 test("coach tags map to report rows, and unknown tags fall back to No single tactic", () => {
@@ -310,4 +310,19 @@ test("a mistake type needs three cases to leave Less common", () => {
   const { themes } = weaknessReport(games);
   assert.deepEqual(themes.common.map((row) => row.id), ["allowed-tactic"]);
   assert.deepEqual(themes.lessCommon.map((row) => row.id), ["missed-mate"]);
+});
+
+test("a side chosen in Load PGN or reopened from Practice is trusted", () => {
+  const meta = { colorConfirmed: true, playedColor: "b", white: { username: "x" }, black: { username: "y" } };
+  assert.equal(confirmedSide(meta, "someone"), "b");
+});
+
+test("a Chess.com game counts only when the signed-in account or saved username plays in it", () => {
+  const white = { username: "alice" };
+  const black = { username: "bob" };
+  assert.equal(confirmedSide({ accountUsername: "Alice", white: { username: "zed" }, black: { username: "alice" } }), "b");
+  assert.equal(confirmedSide({ white, black }, " ALICE "), "w");
+  assert.equal(confirmedSide({ accountUsername: "carol", white, black }), null);
+  assert.equal(confirmedSide({ accountUsername: "carol", white, black }, "alice"), "w");
+  assert.equal(confirmedSide({ white, black }), null);
 });

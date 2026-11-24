@@ -229,3 +229,19 @@ export function reportFilter(kind, value) {
     default: throw new Error(`Unknown report filter: ${kind}`);
   }
 }
+
+/**
+ * The user's side when it is known: chosen in Load PGN, reopened from the Practice page, or the signed-in
+ * Chess.com account (or the username saved in Settings) matching one of the players. Null otherwise.
+ */
+export function confirmedSide({ colorConfirmed, playedColor, accountUsername, white, black }, fallbackUsername = null) {
+  if (colorConfirmed) return playedColor ?? null;
+  const players = { w: white?.username?.toLowerCase(), b: black?.username?.toLowerCase() };
+  for (const name of [accountUsername, fallbackUsername]) {
+    const user = typeof name === "string" ? name.trim().toLowerCase() : "";
+    if (!user) continue;
+    if (players.w === user) return "w";
+    if (players.b === user) return "b";
+  }
+  return null;
+}
