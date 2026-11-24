@@ -67,6 +67,7 @@ const state = {
   solvedFirstTry: 0,
   skipped: 0,
   unverifiedAttempt: false,
+  unloadable: new Set(),
   lineTimer: null,
 };
 
@@ -86,6 +87,7 @@ function setPrompt(text, tone = "") {
 }
 
 const allPuzzles = () => [...state.data.puzzles.values()];
+const playable = () => allPuzzles().filter((p) => !state.unloadable.has(p.id));
 const dailyCap = () => state.data.settings.dailyCap ?? DEFAULT_DAILY_CAP;
 const plural = (count, word) => `${count} ${word}${count === 1 ? "" : "s"}`;
 
@@ -129,7 +131,7 @@ function startSession({ filter = null, label = "" } = {}) {
   stopLine();
   state.mode = filter ? "theme" : "daily";
   dom.sessionBadge.textContent = filter ? `PRACTICE · ${label.toUpperCase()}` : "DAILY REVIEW";
-  state.queue = startQueue(buildSession(allPuzzles(), { today, cap: dailyCap(), filter }));
+  state.queue = startQueue(buildSession(playable(), { today, cap: dailyCap(), filter }));
   state.solvedFirstTry = 0;
   state.skipped = 0;
   switchTab("session");
@@ -150,6 +152,7 @@ function loadCurrentPuzzle() {
     game = replayGame(puzzle.initialFen, puzzle.history);
     if (game.fen() !== puzzle.fen) throw new Error("The saved moves don't reach the saved position.");
   } catch {
+    state.unloadable.add(id);
     state.skipped++;
     state.queue = advanceQueue(state.queue, OUTCOMES.unverified);
     loadCurrentPuzzle();
@@ -300,9 +303,9 @@ function finishSession() {
   dom.done.classList.remove("hidden");
 
   const puzzles = allPuzzles();
-  const due = dueCount(puzzles, today);
+  const due = dueCount(playable(), today);
   const upcoming = puzzles.map((p) => p.schedule.due).filter((date) => date && date > today).sort()[0];
-  const more = state.mode === "daily" && due > 0 ? buildSession(allPuzzles(), { today, cap: dailyCap() }).length : 0;
+  const more = state.mode === "daily" && due > 0 ? buildSession(playable(), { today, cap: dailyCap() }).length : 0;
   dom.backToDailyBtn.textContent = more > 0 ? `Keep going (${more})` : "Back to today's puzzles";
   dom.backToDailyBtn.classList.toggle("hidden", state.mode === "daily" && more === 0);
   const later = upcoming ? ` Your next puzzles are due on ${upcoming}.` : "";
@@ -318,7 +321,11 @@ function finishSession() {
   } else if (attempted > 0) {
     title = state.mode === "daily" ? "Done for today" : "Practice complete";
     text = `You solved ${state.solvedFirstTry} of ${attempted} on the first try.`;
-    if (state.mode === "daily") text += more > 0 ? ` ${plural(more, "more puzzle")} ${more === 1 ? "is" : "are"} due.` : later;
+    if (state.mode === "daily") {
+      if (more > 0) text += ` ${plural(more, "more puzzle")} ${more === 1 ? "is" : "are"} due.`;
+      else if (due > 0) text += ` ${plural(due, "more puzzle")} ${due === 1 ? "is" : "are"} due. Raise the daily limit to keep going.`;
+      else text += later;
+    }
   } else if (state.mode === "theme") {
     title = "Nothing to practice";
     text = "Every puzzle of this kind is mastered.";
