@@ -90,3 +90,40 @@ export function puzzleReview(puzzle) {
 export function puzzlePosition(puzzle) {
   return { fen: puzzle.fen, searchOptions: { initialFen: puzzle.initialFen, history: puzzle.history } };
 }
+
+export const OUTCOMES = Object.freeze({ pass: "pass", fail: "fail", unverified: "unverified" });
+
+export const isDue = (puzzle, today) => !puzzle.schedule.mastered && puzzle.schedule.due <= today;
+
+/**
+ * The puzzle after one session result. `early` marks practice before the due date: a pass then
+ * leaves the step and due date as they were, while a fail still resets them. An unverified result
+ * (Stockfish couldn't check the move) changes nothing.
+ */
+export function applyResult(puzzle, outcome, today, { early = false } = {}) {
+  if (outcome === OUTCOMES.unverified) return puzzle;
+  if (outcome !== OUTCOMES.pass && outcome !== OUTCOMES.fail) throw new Error(`Unknown outcome: ${outcome}`);
+  const current = puzzle.schedule;
+  const schedule = { ...current, attempts: current.attempts + 1, lastResult: outcome, lastReviewed: today };
+  if (outcome === OUTCOMES.fail) {
+    Object.assign(schedule, {
+      step: 0, due: addDays(today, REVIEW_INTERVALS[0]), mastered: false, lapses: current.lapses + 1,
+    });
+  } else if (!early) {
+    if (current.step >= REVIEW_INTERVALS.length - 1) {
+      Object.assign(schedule, { mastered: true, due: null });
+    } else {
+      const step = current.step + 1;
+      Object.assign(schedule, { step, due: addDays(today, REVIEW_INTERVALS[step]) });
+    }
+  }
+  return { ...puzzle, schedule };
+}
+
+/** Bring a puzzle, including a mastered one, back to the first step, due tomorrow. */
+export function resetPuzzle(puzzle, today) {
+  return {
+    ...puzzle,
+    schedule: { ...puzzle.schedule, step: 0, due: addDays(today, REVIEW_INTERVALS[0]), mastered: false },
+  };
+}

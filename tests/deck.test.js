@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  REVIEW_INTERVALS, addDays, localDate, newSchedule, puzzleId, puzzlePosition, puzzleReview, puzzlesFromDecisions,
+  OUTCOMES, REVIEW_INTERVALS, addDays, applyResult, isDue, localDate, newSchedule, puzzleId, puzzlePosition, puzzleReview, puzzlesFromDecisions, resetPuzzle,
 } from "../deck.js";
 import { decision } from "./fixtures/training.js";
 
@@ -80,4 +80,65 @@ test("a puzzle supplies what the drill rules and the Stockfish comparison read",
   assert.deepEqual(puzzlePosition(p), {
     fen: p.fen, searchOptions: { initialFen: p.initialFen, history: ["e2e4", "e7e5", "g1f3", "b8c6"] },
   });
+});
+
+const fresh = () => ({ id: "g:5", schedule: newSchedule("2026-11-01") });
+
+test("each first-try pass moves a puzzle up the ladder until it is mastered", () => {
+  let p = fresh();
+  let day = "2026-11-02";
+  const dues = [];
+  for (let i = 0; i < 4; i++) {
+    p = applyResult(p, OUTCOMES.pass, day);
+    dues.push(p.schedule.due);
+    day = p.schedule.due;
+  }
+  assert.deepEqual(dues, ["2026-11-05", "2026-11-12", "2026-12-03", "2027-02-01"]);
+  assert.equal(p.schedule.step, 4);
+  p = applyResult(p, OUTCOMES.pass, day);
+  assert.equal(p.schedule.mastered, true);
+  assert.equal(p.schedule.due, null);
+  assert.equal(p.schedule.attempts, 5);
+  assert.equal(p.schedule.lastReviewed, "2027-02-01");
+  assert.equal(isDue(p, "2030-01-01"), false);
+});
+
+test("a fail sends the puzzle back to one day and counts a lapse", () => {
+  let p = applyResult(fresh(), OUTCOMES.pass, "2026-11-02");
+  p = applyResult(p, OUTCOMES.fail, "2026-11-05");
+  assert.deepEqual(p.schedule, {
+    step: 0, due: "2026-11-06", mastered: false, attempts: 2, lapses: 1, lastResult: "fail", lastReviewed: "2026-11-05",
+  });
+});
+
+test("an unverified result leaves the puzzle untouched", () => {
+  const p = fresh();
+  assert.equal(applyResult(p, OUTCOMES.unverified, "2026-11-02"), p);
+});
+
+test("an unknown result is a programming error", () => {
+  assert.throws(() => applyResult(fresh(), "maybe", "2026-11-02"), /Unknown outcome/);
+});
+
+test("practice before the due date never moves a puzzle forward, but a fail still resets it", () => {
+  const p = { id: "g:5", schedule: { ...newSchedule("2026-11-01"), step: 2, due: "2026-11-20" } };
+  const passed = applyResult(p, OUTCOMES.pass, "2026-11-10", { early: true });
+  assert.equal(passed.schedule.step, 2);
+  assert.equal(passed.schedule.due, "2026-11-20");
+  assert.equal(passed.schedule.attempts, 1);
+  const failed = applyResult(p, OUTCOMES.fail, "2026-11-10", { early: true });
+  assert.equal(failed.schedule.step, 0);
+  assert.equal(failed.schedule.due, "2026-11-11");
+});
+
+test("a puzzle is due on or after its date until it is mastered, and a reset brings it back tomorrow", () => {
+  const p = fresh();
+  assert.equal(isDue(p, "2026-11-01"), false);
+  assert.equal(isDue(p, "2026-11-02"), true);
+  assert.equal(isDue(p, "2026-11-30"), true);
+  const mastered = { ...p, schedule: { ...p.schedule, step: 4, mastered: true, due: null } };
+  const reset = resetPuzzle(mastered, "2026-12-01");
+  assert.equal(reset.schedule.mastered, false);
+  assert.equal(reset.schedule.step, 0);
+  assert.equal(reset.schedule.due, "2026-12-02");
 });
