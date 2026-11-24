@@ -38,7 +38,7 @@ The code reading behind this plan led to five small refinements. Each one keeps 
 7. **Code review of Tasks 6–8 added two tests (97 after Task 8).** "Your main focus" is left out when the top two mistake types tie.
 8. **Only the user's own games are recorded.** `detectPlayedColor` falls back to White when the username matches neither player, so Task 10 records a game only when the side is confirmed: chosen in Load PGN, reopened from the Practice page, or matched to the Chess.com username.
 9. **Code review of Task 9 bounded storage (114 tests after Task 9).** `MAX_GAMES` is 300. Pruning removes mastered orphan puzzles even when their game was removed earlier, and keeps at most 500 unmastered orphans (`MAX_ORPHAN_PUZZLES`). One version rule applies to every read and write. Malformed records are skipped. `savePuzzle` returns false instead of bringing back a puzzle that a re-review removed. A failed prune no longer fails the save.
-10. **Code review of Task 10 tightened which games are recorded (116 tests after Task 10).** The bottom player on a Chess.com page is not always the user. content.js now sends the signed-in account (`accountUsername`) from the site header, and a pure `confirmedSide` in `weakness.js` trusts a side only when Load PGN or Practice confirmed it, or when the account or the username saved in Settings is one of the players. Otherwise the review page shows a notice and saves nothing. Load PGN has a "Save my mistakes for practice" checkbox, so study games stay out of the deck. `recordReviewedGame` reads all review state before its first await and re-checks the run after hashing. It never lets a shallower re-review overwrite a deeper one, and it clears an old failure notice.
+10. **Code review of Task 10 tightened which games are recorded (117 tests after Task 10).** The bottom player on a Chess.com page is not always the user. content.js now sends the signed-in account (`accountUsername`) from the site header, and a pure `confirmedSide` in `weakness.js` trusts a side only when Load PGN or Practice confirmed it, or when the account or the username saved in Settings is one of the players. Otherwise the review page shows a notice and saves nothing. Load PGN has a "Save my mistakes for practice" checkbox, so study games stay out of the deck. `recordReviewedGame` reads all review state before its first await and re-checks the run after hashing. It never lets a shallower re-review overwrite a deeper one, and it clears an old failure notice.
 
 ## File map
 
@@ -2846,7 +2846,7 @@ In `scripts/build.mjs`, add `"practice.css", "practice.html", "practice.js"` aft
 - [ ] **Step 5: Test and build**
 
 Run: `npm test 2>&1 | grep -E "^ℹ (tests|pass|fail)"`
-Expected: `ℹ tests 116`, `ℹ pass 116`, `ℹ fail 0`.
+Expected: `ℹ tests 117`, `ℹ pass 117`, `ℹ fail 0`.
 
 Run: `npm run build && unzip -l dist/chessbot-chrome-v3.4.0.zip | grep -E "practice|deck|weakness|training-store|board-setup"`
 Expected: `board-setup.js`, `deck.js`, `practice.css`, `practice.html`, `practice.js`, `training-store.js`, and `weakness.js` are all listed.
@@ -3072,7 +3072,7 @@ Change the supported-versions rows to:
 - [ ] **Step 6: Final verification**
 
 Run: `npm test 2>&1 | grep -E "^ℹ (tests|pass|fail)"`
-Expected: `ℹ tests 116`, `ℹ pass 116`, `ℹ fail 0`.
+Expected: `ℹ tests 117`, `ℹ pass 117`, `ℹ fail 0`.
 
 Run: `npm run build && ls dist/*v3.5.0.zip && unzip -p dist/chessbot-chrome-v3.5.0.zip manifest.json | grep '"version"'`
 Expected: both v3.5.0 zips exist, and the manifest shows `"version": "3.5.0"`.
