@@ -223,3 +223,65 @@ test("saving a practiced puzzle keeps a newer re-review's analysis", async () =>
   assert.equal(stored.grade, "blunder");
   assert.deepEqual(stored.schedule, schedule);
 });
+
+test("pruning keeps practice data under the byte budget: orphans go first, then the oldest games", async () => {
+  const orphan = (id, createdAt) => ({ ...savedPuzzle(id, "gone"), createdAt });
+  const data = {
+    "training:game:g1": gameRecord("g1", 1),
+    "training:game:g2": gameRecord("g2", 2),
+    "training:card:g1:1": savedPuzzle("g1:1", "g1"),
+    "training:card:g2:1": savedPuzzle("g2:1", "g2"),
+    "training:card:o1": orphan("o1", "2026-01-01"),
+    "training:card:o2": orphan("o2", "2026-01-02"),
+  };
+  const size = (key) => key.length + JSON.stringify(data[key]).length;
+  const total = Object.keys(data).reduce((sum, key) => sum + size(key), 0);
+  const remaining = async (byteLimit) => {
+    const area = new MemoryArea(data);
+    const dropped = await pruneGames(area, 300, 500, byteLimit);
+    return { dropped, keys: Object.keys(area.data).sort() };
+  };
+  assert.deepEqual((await remaining(total)).keys, Object.keys(data).sort());
+  const oneOrphan = await remaining(total - size("training:card:o1"));
+  assert.deepEqual(oneOrphan.keys, ["training:card:g1:1", "training:card:g2:1", "training:card:o2", "training:game:g1", "training:game:g2"]);
+  assert.deepEqual(oneOrphan.dropped, []);
+  const noOrphans = await remaining(total - size("training:card:o1") - size("training:card:o2"));
+  assert.deepEqual(noOrphans.keys, ["training:card:g1:1", "training:card:g2:1", "training:game:g1", "training:game:g2"]);
+  const oldestGame = await remaining(total - size("training:card:o1") - size("training:card:o2") - 1);
+  assert.deepEqual(oldestGame.dropped, ["g1"]);
+  assert.deepEqual(oldestGame.keys, ["training:card:g2:1", "training:game:g2"]);
+  assert.deepEqual((await remaining(0)).keys, []);
+});
+
+test("a full storage area makes room and retries the save", async () => {
+  const bytes = (data) => Object.entries(data).reduce((sum, [key, value]) => sum + key.length + JSON.stringify(value).length, 0);
+  class QuotaArea extends MemoryArea {
+    constructor(initial, quota) {
+      super(initial);
+      this.quota = quota;
+    }
+
+    async set(entries) {
+      if (bytes({ ...this.data, ...entries }) > this.quota) throw new Error("QUOTA_BYTES quota exceeded");
+      await super.set(entries);
+    }
+  }
+  const initial = {};
+  for (let index = 1; index <= 5; index += 1) initial[`training:game:old${index}`] = gameRecord(`old${index}`, index);
+  const fresh = gameRecord("fresh", 100);
+  const incoming = { "training:version": TRAINING_VERSION, "training:game:fresh": fresh };
+  const area = new QuotaArea(initial, bytes(initial) + bytes(incoming) - 1);
+  await saveReview(area, { game: fresh, puzzles: [] });
+  assert.equal("training:game:fresh" in area.data, true);
+  assert.equal("training:game:old1" in area.data, false);
+  assert.equal("training:game:old5" in area.data, true);
+});
+
+test("a second failure still rejects", async () => {
+  class FullArea extends MemoryArea {
+    async set() {
+      throw new Error("QUOTA_BYTES quota exceeded");
+    }
+  }
+  await assert.rejects(saveReview(new FullArea(), { game: gameRecord("g1", 1), puzzles: [] }), /quota/);
+});

@@ -1,10 +1,12 @@
 // Saved practice data. Each game and each puzzle has its own storage key, so the review page and a
 // Practice page can save at the same time without overwriting each other's records.
 // Storage is bounded: at most MAX_GAMES games, plus at most MAX_ORPHAN_PUZZLES unmastered puzzles whose
-// game was pruned (mastered orphans are removed), which stays well inside Chrome's 10 MB quota.
+// game was pruned (mastered orphans are removed), and at most about MAX_TRAINING_BYTES of practice data in
+// total, which stays well inside Chrome's 10 MB quota (shared with the rest of the extension).
 export const TRAINING_VERSION = 1;
 export const MAX_GAMES = 300;
 export const MAX_ORPHAN_PUZZLES = 500;
+export const MAX_TRAINING_BYTES = 6_000_000;
 
 const VERSION_KEY = "training:version";
 const GAME_PREFIX = "training:game:";
@@ -52,7 +54,14 @@ export async function saveReview(area, { game, puzzles, removedIds = [] }) {
   await assertWritable(area);
   const entries = { [VERSION_KEY]: TRAINING_VERSION, [gameStorageKey(game.gameKey)]: game };
   for (const puzzle of puzzles) entries[puzzleStorageKey(puzzle.id)] = puzzle;
-  await area.set(entries);
+  try {
+    await area.set(entries);
+  } catch {
+    // The quota is probably full: make room, then retry once (a second failure propagates).
+    const { games } = await loadTraining(area);
+    await pruneGames(area, Math.max(1, Math.floor(games.size * 0.8)), Math.floor(MAX_ORPHAN_PUZZLES / 2));
+    await area.set(entries);
+  }
   if (removedIds.length) await area.remove(removedIds.map(puzzleStorageKey));
   try {
     await pruneGames(area);
@@ -82,9 +91,11 @@ export async function saveSettings(area, settings) {
 /**
  * Keep at most `limit` games (the oldest are dropped; a game without `reviewedAt` counts as oldest). Puzzles
  * whose game is not kept are orphans: mastered orphans are removed, and at most `orphanLimit` unmastered
- * orphans stay (oldest by `createdAt`, then `id`, go first). Returns the dropped game keys.
+ * orphans stay (oldest by `createdAt`, then `id`, go first). Then, while the remaining records exceed
+ * `byteLimit` (key length plus JSON length), the oldest unmastered orphan goes first, and when none are left
+ * the oldest game goes with all its puzzles. Returns every dropped game key.
  */
-export async function pruneGames(area, limit = MAX_GAMES, orphanLimit = MAX_ORPHAN_PUZZLES) {
+export async function pruneGames(area, limit = MAX_GAMES, orphanLimit = MAX_ORPHAN_PUZZLES, byteLimit = MAX_TRAINING_BYTES) {
   const { games, puzzles } = await loadTraining(area);
   const sorted = [...games.values()].sort((a, b) => (a.reviewedAt ?? 0) - (b.reviewedAt ?? 0));
   const dropped = sorted.slice(0, Math.max(0, games.size - limit)).map((game) => game.gameKey);
@@ -96,8 +107,36 @@ export async function pruneGames(area, limit = MAX_GAMES, orphanLimit = MAX_ORPH
     if (puzzle.schedule.mastered) keys.push(puzzleStorageKey(puzzle.id));
     else unmastered.push(puzzle);
   }
-  unmastered.sort((a, b) => String(a.createdAt ?? "").localeCompare(String(b.createdAt ?? "")) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
-  for (const puzzle of unmastered.slice(0, Math.max(0, unmastered.length - orphanLimit))) keys.push(puzzleStorageKey(puzzle.id));
+  const byAge = (a, b) => String(a.createdAt ?? "").localeCompare(String(b.createdAt ?? "")) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+  unmastered.sort(byAge);
+  const excess = Math.max(0, unmastered.length - orphanLimit);
+  for (const puzzle of unmastered.slice(0, excess)) keys.push(puzzleStorageKey(puzzle.id));
+  // Byte budget over what remains.
+  const size = (key, value) => key.length + JSON.stringify(value).length;
+  const orphans = unmastered.slice(excess);
+  const keptGames = sorted.filter((game) => keptKeys.has(game.gameKey));
+  const keptPuzzles = [...puzzles.values()].filter((puzzle) => keptKeys.has(puzzle.gameKey));
+  let total = 0;
+  for (const game of keptGames) total += size(gameStorageKey(game.gameKey), game);
+  for (const puzzle of [...keptPuzzles, ...orphans]) total += size(puzzleStorageKey(puzzle.id), puzzle);
+  while (total > byteLimit && (orphans.length || keptGames.length)) {
+    if (orphans.length) {
+      const puzzle = orphans.shift();
+      total -= size(puzzleStorageKey(puzzle.id), puzzle);
+      keys.push(puzzleStorageKey(puzzle.id));
+    } else {
+      const game = keptGames.shift();
+      total -= size(gameStorageKey(game.gameKey), game);
+      keys.push(gameStorageKey(game.gameKey));
+      dropped.push(game.gameKey);
+      for (let index = keptPuzzles.length - 1; index >= 0; index -= 1) {
+        if (keptPuzzles[index].gameKey !== game.gameKey) continue;
+        const [puzzle] = keptPuzzles.splice(index, 1);
+        total -= size(puzzleStorageKey(puzzle.id), puzzle);
+        keys.push(puzzleStorageKey(puzzle.id));
+      }
+    }
+  }
   if (keys.length) await area.remove(keys);
   return dropped;
 }
