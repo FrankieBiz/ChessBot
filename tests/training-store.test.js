@@ -130,3 +130,86 @@ test("pages opened outside the extension keep the same data in Web Storage", asy
   await area.remove("training:card:g1:5");
   assert.equal(backing.has("training:card:g1:5"), false);
 });
+
+test("a mastered puzzle whose game was pruned earlier is removed on a later prune", async () => {
+  const area = new MemoryArea({
+    "training:game:old": gameRecord("old", 1),
+    "training:game:mid": gameRecord("mid", 2),
+    "training:card:old:9": savedPuzzle("old:9", "old", false),
+  });
+  assert.deepEqual(await pruneGames(area, 1), ["old"]);
+  assert.equal("training:card:old:9" in area.data, true);
+  area.data["training:card:old:9"] = savedPuzzle("old:9", "old", true);
+  assert.deepEqual(await pruneGames(area, 1), []);
+  assert.equal("training:card:old:9" in area.data, false);
+});
+
+test("unmastered orphans above the cap are removed oldest first", async () => {
+  const orphan = (id, createdAt) => ({ ...savedPuzzle(id, "gone", false), createdAt });
+  const area = new MemoryArea({
+    "training:card:gone:1": orphan("gone:1", "2026-01-01"),
+    "training:card:gone:2": orphan("gone:2", "2026-01-02"),
+    "training:card:gone:3": orphan("gone:3", "2026-01-03"),
+  });
+  await pruneGames(area, 5, 2);
+  assert.deepEqual(Object.keys(area.data).sort(), ["training:card:gone:2", "training:card:gone:3"]);
+});
+
+test("re-saving an existing game at exactly the game limit drops nothing", async () => {
+  const entries = {};
+  for (let i = 0; i < MAX_GAMES; i++) entries[`training:game:g${i}`] = gameRecord(`g${i}`, i + 1);
+  const area = new MemoryArea(entries);
+  await saveReview(area, { game: gameRecord("g0", 1), puzzles: [] });
+  assert.equal((await loadTraining(area)).games.size, MAX_GAMES);
+  assert.equal("training:game:g0" in area.data, true);
+});
+
+test("a game without reviewedAt is treated as the oldest", async () => {
+  const area = new MemoryArea({
+    "training:game:a": gameRecord("a", 5),
+    "training:game:b": { gameKey: "b", pgn: "1. e4 *" },
+    "training:game:c": gameRecord("c", 1),
+  });
+  assert.deepEqual(await pruneGames(area, 2), ["b"]);
+});
+
+test("malformed records are skipped while valid ones still load", async () => {
+  const area = new MemoryArea({
+    "training:card:x": null,
+    "training:game:y": "text",
+    "training:card:z": { id: "z" },
+    "training:game:ok": gameRecord("ok", 1),
+    "training:card:ok:1": savedPuzzle("ok:1", "ok"),
+  });
+  const { games, puzzles } = await loadTraining(area);
+  assert.deepEqual([...games.keys()], ["ok"]);
+  assert.deepEqual([...puzzles.keys()], ["ok:1"]);
+});
+
+test("savePuzzle returns false and writes nothing for a removed puzzle, true for an existing one", async () => {
+  const area = new MemoryArea();
+  await saveReview(area, { game: gameRecord("g1", 1), puzzles: [savedPuzzle("g1:5", "g1")] });
+  assert.equal(await savePuzzle(area, savedPuzzle("g1:9", "g1")), false);
+  assert.equal("training:card:g1:9" in area.data, false);
+  assert.equal(await savePuzzle(area, savedPuzzle("g1:5", "g1", true)), true);
+  assert.equal(area.data["training:card:g1:5"].schedule.mastered, true);
+});
+
+test("a non-numeric version is read-only everywhere", async () => {
+  const area = new MemoryArea({ "training:version": "v2" });
+  assert.equal((await loadTraining(area)).writable, false);
+  await assert.rejects(savePuzzle(area, savedPuzzle("g1:5", "g1")), TrainingVersionError);
+  await assert.rejects(saveSettings(area, { dailyCap: 1 }), TrainingVersionError);
+});
+
+test("saveReview still resolves when the best-effort prune fails (the full scan throws)", async () => {
+  class PruneFailsArea extends MemoryArea {
+    async get(keys) {
+      if (keys === null) throw new Error("scan failed");
+      return super.get(keys);
+    }
+  }
+  const area = new PruneFailsArea();
+  await saveReview(area, { game: gameRecord("g1", 1), puzzles: [savedPuzzle("g1:5", "g1")] });
+  assert.equal("training:game:g1" in area.data, true);
+});
