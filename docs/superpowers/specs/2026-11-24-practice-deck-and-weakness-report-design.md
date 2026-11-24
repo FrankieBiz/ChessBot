@@ -1,7 +1,7 @@
 # Practice Deck and Weakness Report — Design
 
 Date: 2026-11-24
-Status: Approved in brainstorming; awaiting written-spec review
+Status: Design approved; spec review passed; awaiting user review of this document
 Target release: v3.5.0
 
 ## Goal
@@ -131,7 +131,8 @@ A session filtered by a report row (theme, phase, low clock, easy positions, or 
 
 **5. Converting wins.**
 - A game counts when the user's expected score, measured before one of their own decisions, reached 85 or more, and the result was not a win for the user.
-- The row shows "N of M games: you were winning but drew or lost."
+- The row shows "N of M games: you were winning but drew or lost." M is the number of games that reached 85 or more.
+- Games with an unknown result (`result` is `null`) are left out of both N and M.
 
 Every row has a **Practice these** button that starts a theme-practice session with the matching puzzles.
 
@@ -143,6 +144,8 @@ Stored per reviewed game: `gameKey`, `reviewedAt`, `date` (from PGN `UTCDate`/`D
 
 - Chess.com games use `chesscom:<gameId>` from the loaded payload.
 - Pasted PGNs use `pgn:<first 16 hex characters of SHA-256 of initialFen + " " + the UCI move list>`. The same game pasted twice is recognized regardless of headers or comments.
+- The same game reviewed once from Chess.com and once as a pasted PGN gets two identities and duplicate puzzles. This is accepted for v3.5.0.
+- **Open game** rebuilds the review from the stored PGN text and color. Clocks, time control, and ratings come from the PGN headers and comments, as they do for a pasted PGN. Chess.com PGNs include them.
 
 ## Part 3: Build, data, and testing
 
@@ -153,7 +156,7 @@ Stored per reviewed game: `gameKey`, `reviewedAt`, `date` (from PGN `UTCDate`/`D
 | `deck.js` (new) | Pure logic: `puzzlesFromReview`, `applyResult(puzzle, outcome, today)`, `buildSession(puzzles, { today, cap, filter })`, interleaving, and local-date arithmetic. `today` is a parameter, never read from the clock inside the module. |
 | `weakness.js` (new) | Pure logic: the theme table, `summarizeGame(...)`, `weaknessReport(summaries)`, and all thresholds (5 games, window 50, 3 and 5 cases, find chance 70, expected score 85, the clock rule) as exported constants. |
 | `training-store.js` (new) | The only module that touches `storage.local` for training data. Handles reading, writing, the version check, and pruning. Takes the storage area as a parameter so tests can pass a fake. |
-| `board-setup.js` (new) | Extracted from `review.js`: creating the cm-chessboard instance (pieces, Arrows, Markers, PromotionDialog) and the promotion-picker flow in `handleBoardInput`. `review.js` and `practice.js` both use it. Behavior on the review page must not change. |
+| `board-setup.js` (new) | Extracted from `review.js`. It has two exports: `createBoard(element, { orientation, theme })`, which builds the cm-chessboard instance with the pieces, Arrows, Markers, and PromotionDialog, and `requestPromotion(board, game, from, to, onMove)`, which wraps `promotionChoices` and `showPromotionDialog` with the epoch guard. Each page keeps its own input handler and commit callback, because the review page's `handleBoardInput` and `commitBoardMove` depend on review-only state such as drills and variations. Behavior on the review page must not change. |
 | `practice.html`, `practice.js`, `practice.css` (new) | The Practice page. Links `review.css` for shared tokens and components, and adds `practice.css` for page-specific layout. |
 | `review.js` | Records the game and puzzles when a review finishes, shows the **Practice** button with the due count, and handles `?game=&ply=`. |
 | `review.html` | Adds the Practice button. |
@@ -176,6 +179,15 @@ No new extension permissions.
 - **Size:** about 6 KB per game (PGN about 2 KB, summary about 1 KB, about 5 puzzles at about 600 bytes). Chrome's `storage.local` quota is 10 MB.
 - **Pruning:** when more than 500 game records exist, remove the oldest by `reviewedAt` together with their mastered puzzles. Unmastered puzzles are always kept.
 - **Version:** if `training:version` is greater than the supported version, the Practice page is read-only and `review.js` does not record.
+
+### Build order
+
+1. Extract `board-setup.js` and confirm the review page behaves as before.
+2. Build `deck.js` and `weakness.js` with their unit tests.
+3. Build `training-store.js` with its tests.
+4. Record reviews from `review.js` and add the Practice button.
+5. Build the Practice page: session, report, theme practice, and Open game.
+6. Run the browser check, then update the docs and version.
 
 ### Data flow
 
