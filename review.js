@@ -2300,10 +2300,11 @@ async function bootstrap() {
   // The Practice page links here with ?game=<gameKey>&ply=<ply> to open a saved game at that move.
   const params = new URLSearchParams(location.search);
   const requestedGame = params.get("game");
+  let missingGame = false;
   if (requestedGame) {
     try {
       const record = (await loadTraining(trainingArea)).games.get(requestedGame);
-      if (!record) showTrainingNotice("That game is no longer saved for practice.");
+      if (!record) missingGame = true;
       if (record) {
         const res = loadGameFromPayload({
           gameId: record.gameId, pgn: record.pgn, playedColor: record.color, colorConfirmed: true,
@@ -2327,6 +2328,7 @@ async function bootstrap() {
       const res = loadGameFromPayload(stored.activeGame);
       if (res.ok) {
         runFullAnalysis();
+        if (missingGame) showTrainingNotice("That game is no longer saved for practice.");
         return;
       }
     }
@@ -2336,6 +2338,7 @@ async function bootstrap() {
 
   dom.gameMetaSubtitle.textContent = "Finish a game on Chess.com or click Load PGN to begin";
   openPgnModal();
+  if (missingGame) showTrainingNotice("That game is no longer saved for practice.");
 }
 
 bootstrap();
