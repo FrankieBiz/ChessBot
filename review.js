@@ -1,19 +1,7 @@
 import { Chess } from "./vendor/chess.js/chess.js";
-import {
-  Chessboard,
-  COLOR,
-  FEN,
-  INPUT_EVENT_TYPE,
-} from "./vendor/cm-chessboard/src/Chessboard.js";
-import { Arrows } from "./vendor/cm-chessboard/src/extensions/arrows/Arrows.js";
-import {
-  Markers,
-  MARKER_TYPE,
-} from "./vendor/cm-chessboard/src/extensions/markers/Markers.js";
-import {
-  PromotionDialog,
-  PROMOTION_DIALOG_RESULT_TYPE,
-} from "./vendor/cm-chessboard/src/extensions/promotion-dialog/PromotionDialog.js";
+import { COLOR, INPUT_EVENT_TYPE } from "./vendor/cm-chessboard/src/Chessboard.js";
+import { MARKER_TYPE } from "./vendor/cm-chessboard/src/extensions/markers/Markers.js";
+import { createBoard, requestPromotion } from "./board-setup.js";
 import {
   CLASSIFICATIONS,
   StockfishEngine,
@@ -35,7 +23,7 @@ import { AI_PRESETS, coachEndpoint, coachRequestBody, migrateCoachSettings } fro
 import { trainingPriority } from "./practical-model.js";
 import { computeDecisionQuality } from "./decision-quality.js";
 import { drillHint, drillPrompt, drillRejection, judgeDrillAttempt } from "./drills.js";
-import { describeVariation, moveToUci, parseUciMove, promotionChoices, replayVariation } from "./variation.js";
+import { describeVariation, moveToUci, parseUciMove, replayVariation } from "./variation.js";
 import {
   HUMAN_MOVE_SEARCH_DEPTH, candidateScores, forecastHumanMoves, humanContext, moveFeatureRows,
 } from "./human-move-model.js";
@@ -463,25 +451,7 @@ function initBoard(orientation = "w") {
   }
 
   state.orientation = orientation;
-  board = new Chessboard(dom.boardEl, {
-    position: FEN.start,
-    orientation: orientation === "b" ? COLOR.black : COLOR.white,
-    assetsUrl: "./vendor/cm-chessboard/assets/",
-    style: {
-      cssClass: "default",
-      showCoordinates: true,
-      pieces: {
-        file: "pieces/staunty.svg",
-      },
-      animationDuration: 180,
-    },
-    extensions: [
-      { class: Arrows },
-      { class: Markers },
-      { class: PromotionDialog },
-    ],
-  });
-
+  board = createBoard(dom.boardEl, { orientation });
   enableBoardInput();
 }
 
@@ -569,19 +539,12 @@ function handleBoardInput(event) {
     board.removeMarkers(MARKER_TYPE.dot);
     const activeChess = getActiveChessInstance();
     const { squareFrom: from, squareTo: to } = event;
-    if (promotionChoices(activeChess, from, to).length) {
-      // Let the player choose the piece. Underpromotion can be the only winning move.
-      const epoch = state.boardEpoch;
-      const color = activeChess.turn() === "w" ? COLOR.white : COLOR.black;
-      board.showPromotionDialog(to, color, (result) => {
-        if (epoch !== state.boardEpoch) return;
-        const chosen = result.type === PROMOTION_DIALOG_RESULT_TYPE.pieceSelected
-          ? { from, to, promotion: result.piece.charAt(1) } : null;
-        if (!chosen || !commitBoardMove(activeChess, chosen)) board.setPosition(activeChess.fen(), true);
-      });
-      return true;
-    }
-    return commitBoardMove(activeChess, { from, to });
+    // Let the player choose the piece. Underpromotion can be the only winning move.
+    const epoch = state.boardEpoch;
+    const promoting = requestPromotion(board, activeChess, from, to, (chosen) => {
+      if (!chosen || !commitBoardMove(activeChess, chosen)) board.setPosition(activeChess.fen(), true);
+    }, () => epoch === state.boardEpoch);
+    return promoting || commitBoardMove(activeChess, { from, to });
   }
 
   if (event.type === INPUT_EVENT_TYPE.moveInputCanceled) {
