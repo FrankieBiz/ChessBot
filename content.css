@@ -1,0 +1,102 @@
+/* Scoped styles for the injected Chess.com Local Game Review button */
+.clgr-btn-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  width: 100%;
+  grid-column: 1 / -1;
+  flex-basis: 100%;
+  margin: 8px 0 6px 0;
+  box-sizing: border-box;
+}
+
+.clgr-review-btn {
+  width: 100%;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  padding: 10px 16px;
+  border-radius: 8px;
+  border: 1px solid #45423d;
+  background: linear-gradient(180deg, #2d2b28 0%, #1f1d1a 100%);
+  color: #f3f1ec;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.1s ease, box-shadow 0.15s ease;
+  box-shadow: 0 3px 0 #12110f, 0 4px 12px rgba(0, 0, 0, 0.25);
+  box-sizing: border-box;
+}
+
+.clgr-review-btn:hover:not(:disabled) {
+  background: linear-gradient(180deg, #383531 0%, #262421 100%);
+  border-color: #81b64c;
+  color: #ffffff;
+  box-shadow: 0 3px 0 #12110f, 0 4px 16px rgba(129, 182, 76, 0.22);
+}
+
+.clgr-review-btn:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow: 0 2px 0 #12110f;
+}
+
+.clgr-review-btn:disabled {
+  opacity: 0.78;
+  cursor: wait;
+}
+
+.clgr-icon {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.clgr-spinner {
+  width: 15px;
+  height: 15px;
+  border: 2px solid rgba(255, 255, 255, 0.25);
+  border-top-color: #81b64c;
+  border-radius: 50%;
+  animation: clgr-spin 0.75s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes clgr-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.clgr-status-text {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 12px;
+  color: #7c7974;
+  text-align: center;
+  line-height: 1.4;
+  padding: 0 6px;
+  word-break: break-word;
+}
+
+.clgr-status-text:empty {
+  display: none;
+}
+
+.clgr-status-text.clgr-error {
+  color: #d93835;
+  background: rgba(217, 56, 53, 0.08);
+  border: 1px solid rgba(217, 56, 53, 0.25);
+  border-radius: 6px;
+  padding: 6px 10px;
+}
+
+.clgr-status-text.clgr-success {
+  color: #5b9228;
+}

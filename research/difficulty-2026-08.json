@@ -1,0 +1,126 @@
+{
+  "samples": {
+    "train": {
+      "file": "2026-02.pgn.zst",
+      "sha256": "902c59f9bc30d26805b531c9556835e1f3d043646b731ec999f5d8418b86cd08",
+      "decisions": 8774
+    },
+    "validation": {
+      "file": "2026-05.pgn.zst",
+      "sha256": "ce7210a74da6653433b988087ad311c4bbd1ada198d84234ed141874425e4898",
+      "decisions": 9068
+    },
+    "test": {
+      "file": "2026-08.pgn.zst",
+      "sha256": "b922312677735f0752dcfadebe895f1f8a5443922e942780b48f4c67cee0683e",
+      "decisions": 7323
+    }
+  },
+  "target": "Observed move loses at most five points on the Lichess centipawn curve",
+  "features": [
+    "intercept",
+    "mover_cp",
+    "abs_mover_cp",
+    "ply",
+    "legal_moves",
+    "capture_density",
+    "in_check",
+    "non_pawn_material",
+    "own_clock",
+    "clock_advantage",
+    "time_control",
+    "mover_rating",
+    "opponent_rating"
+  ],
+  "trainingSoundMoveRate": 0.7570093457943925,
+  "selectedOnValidation": [
+    "position",
+    "lichessRating"
+  ],
+  "validation": {
+    "constant": {
+      "brier": 0.18590526876965693,
+      "logLoss": 0.5588337111155416
+    },
+    "evalOnly": {
+      "brier": 0.18284451211921435,
+      "logLoss": 0.5480477952908345
+    },
+    "position": {
+      "brier": 0.1806785066661982,
+      "logLoss": 0.5421264443511128
+    },
+    "clock": {
+      "brier": 0.18076235343648595,
+      "logLoss": 0.5423540316360895
+    },
+    "lichessRating": {
+      "brier": 0.17868559132540068,
+      "logLoss": 0.5369465743510893
+    }
+  },
+  "test": {
+    "constant": {
+      "brier": 0.17900321044492926,
+      "logLoss": 0.5435751764242462
+    },
+    "evalOnly": {
+      "brier": 0.17585636031318663,
+      "logLoss": 0.5310260024609199
+    },
+    "position": {
+      "brier": 0.17436723423565959,
+      "logLoss": 0.5268311734851052
+    },
+    "clock": {
+      "brier": 0.17456281737457263,
+      "logLoss": 0.5273026719066758
+    },
+    "lichessRating": {
+      "brier": 0.17212209651662122,
+      "logLoss": 0.5208148542758866
+    }
+  },
+  "testByPosition": {
+    "balanced": {
+      "decisions": 2949,
+      "rate": 0.7690742624618515,
+      "position": {
+        "brier": 0.18131388093859108,
+        "logLoss": 0.5495499422543384
+      },
+      "lichessRating": {
+        "brier": 0.17928848753661147,
+        "logLoss": 0.5437880388087569
+      }
+    },
+    "lopsided": {
+      "decisions": 2814,
+      "rate": 0.8308457711442786,
+      "position": {
+        "brier": 0.1317125535334117,
+        "logLoss": 0.4214752958018365
+      },
+      "lichessRating": {
+        "brier": 0.13008968556887746,
+        "logLoss": 0.4168912590855536
+      }
+    }
+  },
+  "testPairedBrierGainVsEvalOnly": {
+    "position": {
+      "gain": 0.001489126077527088,
+      "approximate95PercentInterval": [
+        0.0009017522912604802,
+        0.0020764998637936957
+      ]
+    },
+    "lichessRating": {
+      "gain": 0.003734263796565407,
+      "approximate95PercentInterval": [
+        0.0027440569306202887,
+        0.004724470662510525
+      ]
+    }
+  }
+}

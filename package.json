@@ -1,0 +1,16 @@
+{
+  "name": "chessbot-local-game-review",
+  "version": "3.3.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "node --test tests/*.test.js",
+    "pretest": "node scripts/build.mjs --test"
+  },
+  "dependencies": {
+    "chess.js": "1.4.0",
+    "cm-chessboard": "8.15.8",
+    "stockfish": "19.0.1"
+  }
+}

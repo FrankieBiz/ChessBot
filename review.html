@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Chess.com Local Game Review</title>
+  <link rel="icon" type="image/svg+xml" href="./icons/icon.svg" />
+  <link rel="stylesheet" href="./vendor/cm-chessboard/assets/chessboard.css" />
+  <link rel="stylesheet" href="./vendor/cm-chessboard/assets/extensions/arrows/arrows.css" />
+  <link rel="stylesheet" href="./vendor/cm-chessboard/assets/extensions/markers/markers.css" />
+  <link rel="stylesheet" href="./review.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-left">
+      <img src="./icons/icon.svg" alt="" class="brand-icon" />
+      <div class="brand-text">
+        <div class="brand-title-row">
+          <h1>Local Game Review</h1>
+          <span id="openingTag" class="opening-tag hidden"></span>
+        </div>
+        <span id="gameMetaSubtitle" class="game-meta">Ready to analyze</span>
+      </div>
+    </div>
+
+    <div class="topbar-controls">
+      <label class="depth-control" for="depthSelect">
+        <span>Depth</span>
+        <select id="depthSelect">
+          <option value="12">12 (Fast)</option>
+          <option value="14">14</option>
+          <option value="16" selected>16 (Balanced)</option>
+          <option value="18">18 (Deep)</option>
+          <option value="20">20 (Maximum)</option>
+        </select>
+      </label>
+
+      <button id="reanalyzeBtn" class="btn btn-secondary" type="button" title="Re-run local Stockfish MultiPV analysis">
+        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><polyline points="21 3 21 9 15 9"/></svg>
+        <span>Re-analyze</span>
+      </button>
+
+      <button id="pastePgnBtn" class="btn btn-secondary" type="button" title="Load PGN or recent game">
+        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+        <span>Load PGN</span>
+      </button>
+
+      <button id="soundToggleBtn" class="btn btn-icon" type="button" title="Toggle Move Sounds" aria-label="Toggle Move Sounds">
+        <svg id="soundOnIcon" class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>
+        <svg id="soundOffIcon" class="ico hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>
+      </button>
+
+      <button id="settingsBtn" class="btn btn-icon" type="button" title="Settings & AI Coach" aria-label="Settings">
+        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.26.604.852.997 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div id="progressBarWrap" class="progress-wrap hidden" aria-live="polite">
+    <div class="progress-track">
+      <div id="progressFill" class="progress-fill" style="width: 0%"></div>
+    </div>
+    <span id="progressLabel" class="progress-label">Initializing Stockfish WASM...</span>
+  </div>
+
+  <main class="studio">
+    <!-- Left Column: Centerpiece Board Stage -->
+    <section class="board-column">
+      <div class="board-frame">
+        <div class="player-strip" id="topPlayerStrip">
+          <div class="player-id">
+            <span class="player-swatch" id="topPlayerSwatch"></span>
+            <span class="player-name" id="topPlayerName">Opponent</span>
+            <span class="player-rating" id="topPlayerRating"></span>
+          </div>
+          <div class="captured-strip">
+            <span id="topCapturedPieces" class="captured-pieces"></span>
+            <span id="topMaterialLead" class="material-lead"></span>
+          </div>
+        </div>
+
+        <div class="board-stage">
+          <div class="eval-bar" id="evalBar" aria-label="Engine evaluation">
+            <div class="eval-fill-white" id="evalFillWhite" style="height: 50%"></div>
+            <span class="eval-score-label" id="evalScoreLabel">0.0</span>
+          </div>
+
+          <div id="boardThemeWrap" class="board-container-wrap theme-emerald">
+            <div id="board" class="chessboard-mount"></div>
+            <div id="squareBadgeOverlay" class="square-badge hidden" aria-hidden="true"></div>
+          </div>
+        </div>
+
+        <div class="player-strip" id="bottomPlayerStrip">
+          <div class="player-id">
+            <span class="player-swatch" id="bottomPlayerSwatch"></span>
+            <span class="player-name" id="bottomPlayerName">You</span>
+            <span class="player-rating" id="bottomPlayerRating"></span>
+          </div>
+          <div class="captured-strip">
+            <span id="bottomCapturedPieces" class="captured-pieces"></span>
+            <span id="bottomMaterialLead" class="material-lead"></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Variation exploration banner -->
+      <div id="variationBanner" class="banner banner-variation hidden">
+        <div class="variation-info">
+          <span class="variation-pill">VARIATION</span>
+          <strong id="variationMovesText"></strong>
+          <span id="variationEvalTag" class="variation-eval-tag"></span>
+        </div>
+        <button id="snapBackBtn" class="btn btn-sm btn-secondary" type="button">Back to Main Line</button>
+      </div>
+
+      <!-- Sleek SVG Transport Controls -->
+      <div class="nav-controls">
+        <button id="navFirstBtn" class="btn btn-nav" type="button" title="Start (ArrowUp)" aria-label="First move">
+          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="11 17 6 12 11 7"/><polyline points="18 17 13 12 18 7"/></svg>
+        </button>
+        <button id="navPrevBtn" class="btn btn-nav" type="button" title="Previous (ArrowLeft)" aria-label="Previous move">
+          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+        </button>
+        <button id="navPlayBtn" class="btn btn-nav" type="button" title="Auto-play (Space)" aria-label="Auto-play">
+          <svg id="playIcon" class="ico" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 4 20 12 6 20 6 4"/></svg>
+          <svg id="pauseIcon" class="ico hidden" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>
+        </button>
+        <button id="navNextBtn" class="btn btn-nav" type="button" title="Next (ArrowRight)" aria-label="Next move">
+          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+        </button>
+        <button id="navLastBtn" class="btn btn-nav" type="button" title="End (ArrowDown)" aria-label="Last move">
+          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="13 17 18 12 13 7"/><polyline points="6 17 11 12 6 7"/></svg>
+        </button>
+        <button id="flipBoardBtn" class="btn btn-nav" type="button" title="Flip Board (F)" aria-label="Flip board">
+          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+        </button>
+      </div>
+
+      <div class="shortcut-bar" aria-hidden="true">
+        <span><kbd>←</kbd><kbd>→</kbd> Step</span>
+        <span><kbd>Space</kbd> Play</span>
+        <span><kbd>F</kbd> Flip</span>
+        <span><kbd>R</kbd> Retry</span>
+        <span><kbd>Esc</kbd> Main Line</span>
+      </div>
+    </section>
+
+    <!-- Right Column: Unified Studio Inspector -->
+    <aside class="inspector">
+      <nav class="sidebar-tabs" role="tablist">
+        <button id="tabReviewBtn" class="tab-btn active" type="button" role="tab" aria-selected="true">
+          Review
+        </button>
+        <button id="tabMovesBtn" class="tab-btn" type="button" role="tab" aria-selected="false">
+          Moves <span id="plyCounter" class="tab-count">0</span>
+        </button>
+        <button id="tabDrillsBtn" class="tab-btn" type="button" role="tab" aria-selected="false">
+          Mistakes <span id="drillCountBadge" class="tab-count hidden">0</span>
+        </button>
+      </nav>
+
+      <!-- TAB 1: GUIDED REVIEW -->
+      <div id="panelReview" class="tab-panel">
+        <div class="inspector-scroll">
+          <!-- Coach Card -->
+          <div id="coachCard" class="coach-card">
+            <div class="coach-card-top">
+              <div class="coach-avatar" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3z"/>
+                </svg>
+              </div>
+              <div class="coach-body">
+                <div class="coach-title-row">
+                  <span id="moveBadge" class="class-badge badge-neutral">•</span>
+                  <h2 id="moveHeadline" class="move-headline">Game Review Ready</h2>
+                  <span id="coachMotifTag" class="motif-tag hidden"></span>
+                </div>
+                <p id="moveSubline" class="coach-text">
+                  Click Start Review below to step through your game with local Stockfish MultiPV coaching.
+                </p>
+              </div>
+            </div>
+
+            <div id="evalDeltaStrip" class="eval-delta-strip hidden">
+              <span id="evalDeltaText"></span>
+              <span id="moveAccuracyPill" class="move-acc-pill"></span>
+              <span id="practicalImpactText" class="practical-impact hidden"></span>
+              <span id="moveDifficultyText" class="practical-impact hidden"></span>
+              <span id="gradeConfidenceText" class="practical-impact hidden"></span>
+            </div>
+
+            <!-- Dual-Line MultiPV 2 Engine Lines -->
+            <div id="pvLinesBox" class="pv-lines-box hidden">
+              <div id="pvLineWrap" class="pv-line hidden">
+                <span class="pv-rank pv-rank-1">#1</span>
+                <span id="pvEval1" class="pv-eval"></span>
+                <code id="pvLineText"></code>
+              </div>
+              <div id="pvLine2Wrap" class="pv-line pv-line-secondary hidden">
+                <span class="pv-rank pv-rank-2">#2</span>
+                <span id="pvEval2" class="pv-eval"></span>
+                <code id="pvLine2Text"></code>
+              </div>
+            </div>
+
+            <div id="coachActionsRow" class="coach-actions hidden">
+              <button id="retryThisMoveBtn" class="btn btn-sm btn-warn hidden" type="button">
+                Retry Move
+              </button>
+              <button id="showBestLineBtn" class="btn btn-sm btn-secondary hidden" type="button">
+                Show Best Line
+              </button>
+              <button id="explainMistakeBtn" class="btn btn-sm btn-coach hidden" type="button">
+                AI Deep Explain
+              </button>
+            </div>
+
+            <div id="aiCoachOutput" class="coach-output hidden">
+              <div class="coach-output-header">AI Coach</div>
+              <p id="aiCoachText"></p>
+            </div>
+          </div>
+
+          <!-- Evaluation Graph + Key Moments -->
+          <div class="section-block">
+            <div class="section-header">
+              <h3>Advantage Timeline</h3>
+              <span class="section-hint">Hover to inspect • Click to jump</span>
+            </div>
+            <div id="evalGraphWrap" class="eval-graph-wrap">
+              <svg id="evalGraphSvg" viewBox="0 0 420 112" preserveAspectRatio="none" role="img" aria-label="Game evaluation chart"></svg>
+              <div id="evalTooltip" class="eval-tooltip hidden"></div>
+            </div>
+            <div id="keyMomentsWrap" class="key-moments hidden">
+              <span class="key-moments-label">Turning points</span>
+              <div id="keyMomentsList" class="key-moments-list"></div>
+            </div>
+          </div>
+
+          <!-- Circular Pro Accuracy Rings + ACPL + Phases + 9-Tier Breakdown -->
+          <div class="section-block">
+            <div class="section-header">
+              <h3 title="Engine accuracy uses Lichess-style game weighting. ACPL is average centipawn loss.">Performance</h3>
+              <div class="summary-tags">
+                <span id="gameResultTag" class="result-tag"></span>
+              </div>
+            </div>
+
+            <div class="accuracy-rings-row">
+              <div class="ring-card ring-white">
+                <div class="ring-svg-wrap">
+                  <svg viewBox="0 0 56 56" class="ring-svg">
+                    <circle class="ring-track" cx="28" cy="28" r="22"/>
+                    <circle id="accWhiteRing" class="ring-progress" cx="28" cy="28" r="22"/>
+                  </svg>
+                  <span id="accWhiteVal" class="ring-num">--</span>
+                </div>
+                <div class="ring-meta">
+                  <span class="ring-side">White</span>
+                  <span id="accWhiteName" class="ring-player">White</span>
+                  <span id="acplWhiteVal" class="ring-acpl">-- ACPL</span>
+                  <span id="qualityWhiteVal" class="ring-acpl" title="Out of 100. Larger Stockfish expected-score losses carry more weight."></span>
+                  <span id="worstWhiteVal" class="ring-acpl" title="Largest single-move Stockfish expected-score loss."></span>
+                </div>
+              </div>
+
+              <div class="ring-card ring-black">
+                <div class="ring-svg-wrap">
+                  <svg viewBox="0 0 56 56" class="ring-svg">
+                    <circle class="ring-track" cx="28" cy="28" r="22"/>
+                    <circle id="accBlackRing" class="ring-progress" cx="28" cy="28" r="22"/>
+                  </svg>
+                  <span id="accBlackVal" class="ring-num">--</span>
+                </div>
+                <div class="ring-meta">
+                  <span class="ring-side">Black</span>
+                  <span id="accBlackName" class="ring-player">Black</span>
+                  <span id="acplBlackVal" class="ring-acpl">-- ACPL</span>
+                  <span id="qualityBlackVal" class="ring-acpl" title="Out of 100. Larger Stockfish expected-score losses carry more weight."></span>
+                  <span id="worstBlackVal" class="ring-acpl" title="Largest single-move Stockfish expected-score loss."></span>
+                </div>
+              </div>
+            </div>
+
+            <div id="phaseStrip" class="phase-strip hidden">
+              <div class="phase-item">
+                <span class="phase-label">Opening</span>
+                <span id="phaseOpeningVal" class="phase-val">--</span>
+                <div class="phase-bar"><div id="phaseOpeningBar" class="phase-bar-fill"></div></div>
+              </div>
+              <div class="phase-item">
+                <span class="phase-label">Middlegame</span>
+                <span id="phaseMiddleVal" class="phase-val">--</span>
+                <div class="phase-bar"><div id="phaseMiddleBar" class="phase-bar-fill"></div></div>
+              </div>
+              <div class="phase-item">
+                <span class="phase-label">Endgame</span>
+                <span id="phaseEndVal" class="phase-val">--</span>
+                <div class="phase-bar"><div id="phaseEndBar" class="phase-bar-fill"></div></div>
+              </div>
+            </div>
+
+            <table class="breakdown-table" aria-label="Move classification breakdown">
+              <thead>
+                <tr>
+                  <th>Classification</th>
+                  <th class="num">White</th>
+                  <th class="num">Black</th>
+                </tr>
+              </thead>
+              <tbody id="breakdownBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Pinned Primary Guided Footer -->
+        <div class="guided-footer">
+          <button id="guidedPrevBtn" class="btn btn-secondary guided-back-btn" type="button" title="Previous move (ArrowLeft)">
+            ← Back
+          </button>
+          <button id="guidedNextBtn" class="btn btn-primary-cta" type="button" title="Next move (ArrowRight / Enter)">
+            Start Review →
+          </button>
+        </div>
+      </div>
+
+      <!-- TAB 2: FULL MOVE LIST -->
+      <div id="panelMoves" class="tab-panel hidden">
+        <div class="inspector-scroll">
+          <div class="section-header">
+            <h3>Algebraic Notation</h3>
+            <span class="section-hint">Click any move to jump</span>
+          </div>
+          <div id="moveList" class="move-list" role="listbox" aria-label="Game move list"></div>
+        </div>
+      </div>
+
+      <!-- TAB 3: RETRY YOUR MISTAKES DRILL TRAINER -->
+      <div id="panelDrills" class="tab-panel hidden">
+        <div class="inspector-scroll drill-panel">
+          <div class="drill-top-row">
+            <span class="drill-badge">MISTAKE TRAINER</span>
+            <strong id="drillCounter">No mistakes loaded</strong>
+          </div>
+
+          <div id="drillDots" class="drill-dots"></div>
+
+          <p id="drillPromptText" class="drill-prompt">
+            Analyze a game first to practice fixing your Mistakes, Misses, and Blunders on the board.
+          </p>
+
+          <div id="drillControls" class="drill-controls hidden">
+            <button id="drillHintBtn" class="btn btn-secondary" type="button">Hint</button>
+            <button id="drillRevealBtn" class="btn btn-secondary" type="button">Show Answer</button>
+            <button id="drillNextBtn" class="btn btn-primary-cta hidden" type="button">Next Mistake →</button>
+          </div>
+
+          <div id="drillDoneCard" class="drill-done hidden">
+            <h3>Drill Complete!</h3>
+            <p id="drillDoneSummary">You reviewed every mistake from this game.</p>
+            <button id="drillRestartBtn" class="btn btn-secondary" type="button">Practice Again</button>
+          </div>
+        </div>
+      </div>
+    </aside>
+  </main>
+
+  <!-- Settings Slide-Over Drawer -->
+  <div id="settingsBackdrop" class="drawer-backdrop hidden"></div>
+  <aside id="settingsDrawer" class="drawer hidden" aria-label="Settings and AI Coach">
+    <div class="drawer-header">
+      <h2>Settings & AI Coach</h2>
+      <button id="closeSettingsBtn" class="btn btn-ghost" type="button" aria-label="Close">✕</button>
+    </div>
+
+    <div class="drawer-body">
+      <div class="privacy-pill">
+        <span class="privacy-dot" aria-hidden="true"></span>
+        <span>100% Local Stockfish MultiPV • Zero Data Collection</span>
+      </div>
+
+      <div class="field">
+        <span>Board Theme</span>
+        <div class="theme-picker" role="group" aria-label="Board theme">
+          <button type="button" class="theme-chip active" data-theme="emerald">
+            <span class="theme-swatch swatch-emerald"></span>Tournament
+          </button>
+          <button type="button" class="theme-chip" data-theme="slate">
+            <span class="theme-swatch swatch-slate"></span>Slate
+          </button>
+          <button type="button" class="theme-chip" data-theme="walnut">
+            <span class="theme-swatch swatch-walnut"></span>Walnut
+          </button>
+        </div>
+      </div>
+
+      <p class="drawer-note">
+        Stockfish grades moves and provides coaching locally. AI Explain sends the selected position and engine lines to the provider you choose.
+      </p>
+
+      <label class="field">
+        <span>AI Provider Preset</span>
+        <select id="aiPresetSelect">
+          <option value="openai">OpenAI (gpt-6.2-sol)</option>
+          <option value="deepseek">DeepSeek (deepseek-flash)</option>
+          <option value="gemini">Google Gemini (gemini-4-hydrogen)</option>
+          <option value="custom">Custom OpenAI-Compatible Endpoint</option>
+        </select>
+      </label>
+
+      <label class="field">
+        <span>API Endpoint URL</span>
+        <input id="aiEndpointInput" type="url" placeholder="https://api.openai.com/v1/chat/completions" />
+      </label>
+
+      <label class="field">
+        <span>Model</span>
+        <input id="aiModelInput" type="text" placeholder="gpt-6.2-sol" />
+      </label>
+
+      <label class="field">
+        <span>API Key</span>
+        <input id="aiApiKeyInput" type="password" placeholder="sk-..." autocomplete="off" />
+      </label>
+
+      <label class="field">
+        <span>Chess.com Username (optional fallback)</span>
+        <input id="fallbackUsernameInput" type="text" placeholder="your_chesscom_username" />
+      </label>
+
+      <div class="drawer-footer">
+        <button id="saveSettingsBtn" class="btn btn-accent" type="button">Save Settings</button>
+        <span id="settingsSavedMsg" class="saved-msg"></span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Paste PGN Modal -->
+  <div id="pgnModalBackdrop" class="modal-backdrop hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>Load Game PGN</h2>
+        <button id="closePgnModalBtn" class="btn btn-ghost" type="button" aria-label="Close">✕</button>
+      </div>
+      <div class="modal-body">
+        <div id="pgnErrorBanner" class="pgn-error hidden"></div>
+        <label class="field">
+          <span>Your Color</span>
+          <select id="pgnColorSelect">
+            <option value="w">White</option>
+            <option value="b">Black</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Paste PGN</span>
+          <textarea id="pgnTextarea" rows="8" placeholder="1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 ..."></textarea>
+        </label>
+        <div id="recentGamesWrap" class="recent-games hidden">
+          <span class="recent-label">Recent Chess.com Games</span>
+          <div id="recentGamesList" class="recent-list"></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="cancelPgnBtn" class="btn btn-secondary" type="button">Cancel</button>
+        <button id="loadPgnConfirmBtn" class="btn btn-accent" type="button">Analyze Game</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="./review.js"></script>
+</body>
+</html>
