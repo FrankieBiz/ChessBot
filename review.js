@@ -24,7 +24,7 @@ import { trainingPriority } from "./practical-model.js";
 import { computeDecisionQuality } from "./decision-quality.js";
 import { drillHint, drillPrompt, drillRejection, drillSuccess, judgeDrillAttempt } from "./drills.js";
 import { dueCount, localDate, puzzlesFromDecisions } from "./deck.js";
-import { confirmedSide, gameAccuracy, gameDate, summarizeGame, userDecisions, userResult } from "./weakness.js";
+import { confirmedSide, gameAccuracy, gameDate, pgnSideFor, summarizeGame, userDecisions, userResult } from "./weakness.js";
 import { gameKeyFor, loadTraining, saveReview, webStorageArea } from "./training-store.js";
 import { describeVariation, moveToUci, parseUciMove, replayVariation } from "./variation.js";
 import {
@@ -386,6 +386,10 @@ function switchTab(tabName) {
   }
 }
 
+dom.pgnTextarea.addEventListener("input", () => {
+  const side = pgnSideFor(dom.pgnTextarea.value, [dom.fallbackUsernameInput.value]);
+  if (side) dom.pgnColorSelect.value = side;
+});
 dom.tabReviewBtn.addEventListener("click", () => switchTab("review"));
 dom.tabMovesBtn.addEventListener("click", () => switchTab("moves"));
 dom.tabDrillsBtn.addEventListener("click", () => switchTab("drills"));
@@ -887,7 +891,7 @@ async function recordReviewedGame(runId, depth) {
     const gameKey = await gameKeyFor({ gameId, initialFen, history });
     if (runId !== state.analysisRunId) return;
     const previous = data.games.get(gameKey);
-    if (previous?.depth > depth) return;
+    if (previous && previous.color === playedColor && previous.depth > depth) return;
 
     const summary = summarizeGame({
       gameKey,

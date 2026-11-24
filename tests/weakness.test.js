@@ -5,7 +5,7 @@ import { THEMES, gameDate, isLowClock, themeForTag, themeLabel, userResult } fro
 import { parseReviewGame } from "../analysis.js";
 import { computeGameInsights } from "../coach.js";
 import { computeProGameAccuracy, evalToWinWhite } from "../engine.js";
-import { confirmedSide, gameAccuracy, reportFilter, summarizeGame, userDecisions, weaknessReport } from "../weakness.js";
+import { pgnSideFor, confirmedSide, gameAccuracy, reportFilter, summarizeGame, userDecisions, weaknessReport } from "../weakness.js";
 import { decision } from "./fixtures/training.js";
 
 test("coach tags map to report rows, and unknown tags fall back to No single tactic", () => {
@@ -331,4 +331,12 @@ test("unchecking Save my mistakes for practice keeps the game out even when the 
   const names = { white: { username: "alice" }, black: { username: "bob" } };
   assert.equal(confirmedSide({ colorConfirmed: false, playedColor: "b", ...names }, "alice"), null);
   assert.equal(confirmedSide({ colorConfirmed: undefined, playedColor: "b", ...names }, "alice"), "w");
+});
+
+test("pgnSideFor reads the White and Black tags", () => {
+  const pgn = '[Event "x"]\n[White "Alice"]\n[Black "Bob"]\n\n1. e4 *';
+  assert.equal(pgnSideFor(pgn, ["alice"]), "w");
+  assert.equal(pgnSideFor(pgn, ["", null, " BOB "]), "b");
+  assert.equal(pgnSideFor("1. e4 *", ["alice"]), null);
+  assert.equal(pgnSideFor(pgn, []), null);
 });

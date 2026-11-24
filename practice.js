@@ -7,7 +7,7 @@ import { StockfishEngine } from "./engine.js";
 import { drillHint, drillPrompt, drillRejection, drillSuccess, judgeDrillAttempt } from "./drills.js";
 import { moveToUci, parseUciMove, replayGame } from "./variation.js";
 import {
-  DEFAULT_DAILY_CAP, OUTCOMES, advanceQueue, applyResult, buildSession, currentId, dueCount, isRepeat,
+  DEFAULT_DAILY_CAP, OUTCOMES, addDays, advanceQueue, applyResult, buildSession, currentId, dueCount, isRepeat,
   localDate, puzzlePosition, puzzleReview, startQueue,
 } from "./deck.js";
 import { EASY_FIND_CHANCE, PHASES, reportFilter, weaknessReport } from "./weakness.js";
@@ -23,7 +23,8 @@ const BOARD_THEMES = ["emerald", "slate", "walnut"];
 
 // `?today=YYYY-MM-DD` runs a later day's session, for checking the schedule in a browser.
 const requestedToday = new URLSearchParams(location.search).get("today");
-const today = /^\d{4}-\d{2}-\d{2}$/.test(requestedToday ?? "") ? requestedToday : localDate();
+const previewing = /^\d{4}-\d{2}-\d{2}$/.test(requestedToday ?? "") && addDays(requestedToday, 0) === requestedToday;
+const today = previewing ? requestedToday : localDate();
 
 const byId = (id) => document.getElementById(id);
 const dom = {
@@ -88,7 +89,10 @@ function setPrompt(text, tone = "") {
 
 const allPuzzles = () => [...state.data.puzzles.values()];
 const playable = () => allPuzzles().filter((p) => !state.unloadable.has(p.id));
-const dailyCap = () => state.data.settings.dailyCap ?? DEFAULT_DAILY_CAP;
+const dailyCap = () => {
+  const stored = state.data.settings.dailyCap;
+  return Number.isInteger(stored) && stored >= 1 && stored <= MAX_DAILY_CAP ? stored : DEFAULT_DAILY_CAP;
+};
 const plural = (count, word) => `${count} ${word}${count === 1 ? "" : "s"}`;
 
 /** Start Stockfish once and reuse it. Resolves to null when it can't load. */
@@ -269,7 +273,7 @@ function recordOutcome(outcome) {
   state.puzzle = updated;
   state.data.puzzles.set(updated.id, updated);
   updateCounts();
-  if (state.data.writable) {
+  if (state.data.writable && !previewing) {
     savePuzzle(area, updated).catch(() => showNotice("Couldn't save your progress on this puzzle."));
   }
 }
@@ -413,7 +417,7 @@ dom.capInput.addEventListener("change", () => {
   const cap = raw !== "" && Number.isFinite(value) && value >= 1 ? Math.min(MAX_DAILY_CAP, value) : dailyCap();
   dom.capInput.value = String(cap);
   state.data.settings = { ...state.data.settings, dailyCap: cap };
-  if (state.data.writable) saveSettings(area, state.data.settings).catch(() => showNotice("Couldn't save the daily limit."));
+  if (state.data.writable && !previewing) saveSettings(area, state.data.settings).catch(() => showNotice("Couldn't save the daily limit."));
   if (state.mode === "daily" && !state.puzzle) startSession();
 });
 
@@ -534,6 +538,12 @@ async function init() {
   }
   if (!state.data.writable) {
     showNotice("Your saved practice data comes from a newer version of ChessBot. You can practice, but progress won't be saved.");
+  }
+  if (previewing) showNotice(`Previewing ${today}: progress isn't saved.`);
+  else {
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible" && localDate() !== today) location.reload();
+    });
   }
   dom.capInput.value = String(dailyCap());
   updateCounts();

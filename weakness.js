@@ -247,3 +247,17 @@ export function confirmedSide({ colorConfirmed, playedColor, accountUsername, wh
   }
   return null;
 }
+
+/** The side a PGN's White/Black tags give the user, or null. Names are compared case-insensitively. */
+export function pgnSideFor(pgnText, names) {
+  const tag = (name) => new RegExp(`^\\s*\\[${name}\\s+"([^"]*)"\\]`, "im").exec(String(pgnText ?? ""))?.[1]?.trim().toLowerCase();
+  const white = tag("White");
+  const black = tag("Black");
+  for (const name of names ?? []) {
+    if (typeof name !== "string" || !name.trim()) continue;
+    const wanted = name.trim().toLowerCase();
+    if (white === wanted) return "w";
+    if (black === wanted) return "b";
+  }
+  return null;
+}
