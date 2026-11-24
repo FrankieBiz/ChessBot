@@ -2999,6 +2999,7 @@ Replace the `## [Unreleased]` section and its two subsections with the block bel
 - **Practice page** with a spaced review of your own mistakes. Every Mistake, Miss, and Blunder from a reviewed game becomes a puzzle that comes back after 1, 3, 7, 21, and 60 days, mixed across games. A wrong first try, a hint, or Show Answer sends a puzzle back to one day. The daily limit defaults to 20 puzzles.
 - **Weakness report** across your 50 most recently reviewed games: mistakes by type, mistakes in easy positions, accuracy by game phase, mistakes when low on time, and winning positions you didn't convert. Each finding links to matching puzzles.
 - **Practice** link in the review header, with the number of puzzles due.
+- Only your own games feed the deck: Chess.com games where your signed-in account, or the username in Settings, is one of the players, and pasted PGNs with **Save my mistakes for practice** ticked.
 - Repository documentation: license, contributing guide, security policy, code of conduct, issue and pull request templates.
 - Continuous integration that runs the test suite on Node.js 24 and 26 and builds both browser packages.
 
@@ -3030,7 +3031,7 @@ In **Features**, insert after the **Practice drills** bullet:
 In **Usage**, add:
 
 ```markdown
-- **Practice:** select **Practice** in the review header. Puzzles from a game first come due the day after you review it.
+- **Practice:** select **Practice** in the review header. Puzzles from a game first come due the day after you review it. When you paste a PGN you only want to study, untick **Save my mistakes for practice**.
 ```
 
 In **Privacy**, add:
@@ -3057,6 +3058,8 @@ Insert before `## Optional AI explanations`:
 Each finished review saves the game and turns every Mistake, Miss, and Blunder by your side into a puzzle. Forced moves are excluded, as in the Mistakes tab. A puzzle keeps the position, the moves that led to it, Stockfish's lines, and the review depth, so the Practice page judges answers with the same rules: Stockfish's move and qualifying mates are accepted at once, and other moves are checked live and accepted within three expected-score points. A missed-mate puzzle needs a mate at least as fast.
 
 A new puzzle first comes due the day after the review. A first-try solve moves it to the next interval of 1, 3, 7, 21, and 60 days, and passing the 60-day review masters it. A wrong first try, a hint, or Show Answer sends it back to one day. Sessions take the most overdue puzzles up to the daily limit and avoid two puzzles in a row from the same game, then from the same mistake type. The schedule rests on two of the best-supported findings in learning research: testing yourself, and spacing practice over time. [Dunlosky et al., 2013](https://doi.org/10.1177/1529100612453266)
+
+Only your own games are saved. A Chess.com game counts when your signed-in account, or the username saved in Settings, is one of the players. A pasted PGN counts when **Save my mistakes for practice** is ticked, using the side you chose. Re-reviewing a game keeps each puzzle's schedule, and a review at a lower depth never replaces a deeper one. ChessBot keeps your 300 most recently reviewed games. Puzzles you haven't mastered stay after their game is removed, up to 500 of them.
 
 The weakness report covers your 50 most recently reviewed games once you have reviewed five. Each mistake gets one type from the coach's tag. A type appears in the main list after three cases and is marked as your main focus after five. A mistake counts as easy when the cohort difficulty model estimates that at least 70% of players find a sound move. A clock is low under 10% of the starting time or 15 seconds, whichever is larger, and only games with recorded clocks count. A game counts as unconverted when your expected score reached 85 before one of your moves and you didn't win. The report shows counts and sample sizes, not statistical tests.
 ```
