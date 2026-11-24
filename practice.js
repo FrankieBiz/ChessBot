@@ -428,7 +428,7 @@ const percent = (value) => (Number.isFinite(value) ? `${Math.round(value)}%` : "
 const rate = (value) => (Number.isFinite(value) ? value.toFixed(1) : "—");
 
 function practiceButton(filter, label) {
-  const count = allPuzzles().filter((p) => !p.schedule.mastered && filter(p)).length;
+  const count = playable().filter((p) => !p.schedule.mastered && filter(p)).length;
   const button = element("button", "btn btn-secondary btn-sm", count ? `Practice these (${count})` : "No open puzzles");
   button.type = "button";
   button.disabled = count === 0;
