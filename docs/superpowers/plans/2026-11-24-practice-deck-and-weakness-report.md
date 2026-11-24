@@ -35,6 +35,8 @@ The code reading behind this plan led to five small refinements. Each one keeps 
 4. **The pages fall back to Web Storage outside the extension.** `webStorageArea` lets `review.html` and `practice.html` run from a local server for the browser check. The installed extension always uses `storage.local`.
 5. **`drillSuccess` moves into `drills.js`.** Both pages show the same solved-drill messages from one function.
 6. **Code review of Tasks 3–5 added a fix commit with six more tests (77 after Task 5).** `applyResult` now works out "early" itself, and early practice no longer counts toward the daily cap. `puzzlesFromDecisions` ignores other games' puzzles, and `isRepeat` is false for an empty queue. Later expected counts include these tests.
+7. **Code review of Tasks 6–8 added two tests (97 after Task 8).** "Your main focus" is left out when the top two mistake types tie.
+8. **Only the user's own games are recorded.** `detectPlayedColor` falls back to White when the username matches neither player, so Task 10 records a game only when the side is confirmed: chosen in Load PGN, reopened from the Practice page, or matched to the Chess.com username.
 
 ## File map
 
@@ -1833,7 +1835,7 @@ export function webStorageArea(storage) {
 - [ ] **Step 4: Run the tests**
 
 Run: `npm test 2>&1 | grep -E "^ℹ (tests|pass|fail)"`
-Expected: `ℹ tests 104`, `ℹ pass 104`, `ℹ fail 0`.
+Expected: `ℹ tests 106`, `ℹ pass 106`, `ℹ fail 0`.
 
 - [ ] **Step 5: Commit**
 
@@ -1916,15 +1918,27 @@ async function refreshPracticeBadge() {
   }
 }
 
+/**
+ * The user's side when it is known: chosen in Load PGN, reopened from the Practice page, or matched
+ * to the Chess.com username. A Chess.com game where neither player matches isn't the user's game.
+ */
+function confirmedColor(meta) {
+  if (meta.colorConfirmed) return meta.playedColor;
+  const user = (meta.username || "").trim().toLowerCase();
+  if (user && meta.white?.username?.toLowerCase() === user) return "w";
+  if (user && meta.black?.username?.toLowerCase() === user) return "b";
+  return null;
+}
+
 /** Save the finished review's summary and the user's mistakes as practice puzzles. */
 async function recordReviewedGame(runId, depth) {
   const meta = state.gameMeta;
-  if (!meta?.pgn || !meta.playedColor) return;
+  const playedColor = meta ? confirmedColor(meta) : null;
+  if (!meta?.pgn || !playedColor) return;
   try {
     const data = await loadTraining(trainingArea);
     if (!data.writable || runId !== state.analysisRunId) return;
 
-    const playedColor = meta.playedColor;
     const { initialFen, history } = state.positions.at(-1).searchOptions;
     const gameKey = await gameKeyFor({ gameId: meta.gameId, initialFen, history });
     const today = localDate();
@@ -2001,8 +2015,8 @@ async function bootstrap() {
       const record = (await loadTraining(trainingArea)).games.get(requestedGame);
       if (record) {
         const res = loadGameFromPayload({
-          gameId: record.gameId, pgn: record.pgn, playedColor: record.color, timeClass: record.timeClass,
-          timeControl: record.timeControl, endTime: record.endTime,
+          gameId: record.gameId, pgn: record.pgn, playedColor: record.color, colorConfirmed: true,
+          timeClass: record.timeClass, timeControl: record.timeControl, endTime: record.endTime,
         });
         if (res.ok) {
           const ply = Number(params.get("ply"));
@@ -2033,6 +2047,22 @@ async function bootstrap() {
   openPgnModal();
 }
 ```
+
+- [ ] **Step 6b: Mark the side as confirmed in Load PGN**
+
+In the `loadPgnConfirmBtn` click handler, the user picks their side, so add `colorConfirmed: true` to the payload:
+
+```js
+  const payload = {
+    gameId: `manual-${Date.now()}`,
+    pgn,
+    playedColor: dom.pgnColorSelect.value,
+    colorConfirmed: true,
+    timeClass: "Custom PGN",
+  };
+```
+
+Chess.com games are recorded only when the signed-in username matches one of the players, because `detectPlayedColor` in `background.js` falls back to White when neither matches.
 
 - [ ] **Step 7: Add the Practice link and save notice to `review.html`**
 
@@ -2081,7 +2111,7 @@ Expected: the list includes `"board-setup.js"`, `"deck.js"`, `"training-store.js
 - [ ] **Step 10: Test and build**
 
 Run: `npm test 2>&1 | grep -E "^ℹ (tests|pass|fail)"`
-Expected: `ℹ tests 104`, `ℹ pass 104`, `ℹ fail 0`.
+Expected: `ℹ tests 106`, `ℹ pass 106`, `ℹ fail 0`.
 
 Run: `npm run build`
 Expected: both zips build with no errors.
@@ -2814,7 +2844,7 @@ In `scripts/build.mjs`, add `"practice.css", "practice.html", "practice.js"` aft
 - [ ] **Step 5: Test and build**
 
 Run: `npm test 2>&1 | grep -E "^ℹ (tests|pass|fail)"`
-Expected: `ℹ tests 104`, `ℹ pass 104`, `ℹ fail 0`.
+Expected: `ℹ tests 106`, `ℹ pass 106`, `ℹ fail 0`.
 
 Run: `npm run build && unzip -l dist/chessbot-chrome-v3.4.0.zip | grep -E "practice|deck|weakness|training-store|board-setup"`
 Expected: `board-setup.js`, `deck.js`, `practice.css`, `practice.html`, `practice.js`, `training-store.js`, and `weakness.js` are all listed.
@@ -3040,7 +3070,7 @@ Change the supported-versions rows to:
 - [ ] **Step 6: Final verification**
 
 Run: `npm test 2>&1 | grep -E "^ℹ (tests|pass|fail)"`
-Expected: `ℹ tests 104`, `ℹ pass 104`, `ℹ fail 0`.
+Expected: `ℹ tests 106`, `ℹ pass 106`, `ℹ fail 0`.
 
 Run: `npm run build && ls dist/*v3.5.0.zip && unzip -p dist/chessbot-chrome-v3.5.0.zip manifest.json | grep '"version"'`
 Expected: both v3.5.0 zips exist, and the manifest shows `"version": "3.5.0"`.
