@@ -34,6 +34,7 @@ The code reading behind this plan led to five small refinements. Each one keeps 
 3. **The daily cap counts puzzles already practiced today.** Without this, reopening the Practice page would start another full session the same day.
 4. **The pages fall back to Web Storage outside the extension.** `webStorageArea` lets `review.html` and `practice.html` run from a local server for the browser check. The installed extension always uses `storage.local`.
 5. **`drillSuccess` moves into `drills.js`.** Both pages show the same solved-drill messages from one function.
+6. **Code review of Tasks 3–5 added a fix commit with six more tests (77 after Task 5).** `applyResult` now works out "early" itself, and early practice no longer counts toward the daily cap. `puzzlesFromDecisions` ignores other games' puzzles, and `isRepeat` is false for an empty queue. Later expected counts include these tests.
 
 ## File map
 
@@ -1059,7 +1060,7 @@ export function gameDate({ endTime, headers = {} }, today) {
 - [ ] **Step 4: Run the tests**
 
 Run: `npm test 2>&1 | grep -E "^ℹ (tests|pass|fail)"`
-Expected: `ℹ tests 76`, `ℹ pass 76`, `ℹ fail 0`.
+Expected: `ℹ tests 82`, `ℹ pass 82`, `ℹ fail 0`.
 
 - [ ] **Step 5: Commit**
 
@@ -1296,7 +1297,7 @@ Note: `summarizeGame({ ..., depth })` with `depth` missing gives `depth: undefin
 - [ ] **Step 4: Run the tests**
 
 Run: `npm test 2>&1 | grep -E "^ℹ (tests|pass|fail)"`
-Expected: `ℹ tests 81`, `ℹ pass 81`, `ℹ fail 0`.
+Expected: `ℹ tests 87`, `ℹ pass 87`, `ℹ fail 0`.
 
 If the decision-theme test fails, print the coach tag for ply 3 or 5 with a one-off `node -e` script before changing the fixture. The fixture is built so ply 3 reaches the final Positional Slip branch of `generateLocalCoachInsight`, and ply 5 reaches the Missed Defense branch.
 
@@ -1546,7 +1547,7 @@ export function reportFilter(kind, value) {
 - [ ] **Step 4: Run the tests**
 
 Run: `npm test 2>&1 | grep -E "^ℹ (tests|pass|fail)"`
-Expected: `ℹ tests 89`, `ℹ pass 89`, `ℹ fail 0`.
+Expected: `ℹ tests 95`, `ℹ pass 95`, `ℹ fail 0`.
 
 - [ ] **Step 5: Commit**
 
@@ -1832,7 +1833,7 @@ export function webStorageArea(storage) {
 - [ ] **Step 4: Run the tests**
 
 Run: `npm test 2>&1 | grep -E "^ℹ (tests|pass|fail)"`
-Expected: `ℹ tests 98`, `ℹ pass 98`, `ℹ fail 0`.
+Expected: `ℹ tests 104`, `ℹ pass 104`, `ℹ fail 0`.
 
 - [ ] **Step 5: Commit**
 
@@ -2080,7 +2081,7 @@ Expected: the list includes `"board-setup.js"`, `"deck.js"`, `"training-store.js
 - [ ] **Step 10: Test and build**
 
 Run: `npm test 2>&1 | grep -E "^ℹ (tests|pass|fail)"`
-Expected: `ℹ tests 98`, `ℹ pass 98`, `ℹ fail 0`.
+Expected: `ℹ tests 104`, `ℹ pass 104`, `ℹ fail 0`.
 
 Run: `npm run build`
 Expected: both zips build with no errors.
@@ -2292,7 +2293,7 @@ import { StockfishEngine } from "./engine.js";
 import { drillHint, drillPrompt, drillRejection, drillSuccess, judgeDrillAttempt } from "./drills.js";
 import { moveToUci, parseUciMove, replayGame } from "./variation.js";
 import {
-  DEFAULT_DAILY_CAP, OUTCOMES, advanceQueue, applyResult, buildSession, currentId, dueCount, isDue, isRepeat,
+  DEFAULT_DAILY_CAP, OUTCOMES, advanceQueue, applyResult, buildSession, currentId, dueCount, isRepeat,
   localDate, puzzlePosition, puzzleReview, startQueue,
 } from "./deck.js";
 import { EASY_FIND_CHANCE, PHASES, reportFilter, weaknessReport } from "./weakness.js";
@@ -2543,7 +2544,7 @@ function recordOutcome(outcome) {
   state.outcome = outcome;
   if (isRepeat(state.queue)) return;
   if (outcome === OUTCOMES.pass) state.solvedFirstTry++;
-  const updated = applyResult(state.puzzle, outcome, today, { early: !isDue(state.puzzle, today) });
+  const updated = applyResult(state.puzzle, outcome, today);
   state.puzzle = updated;
   state.data.puzzles.set(updated.id, updated);
   updateCounts();
@@ -2813,7 +2814,7 @@ In `scripts/build.mjs`, add `"practice.css", "practice.html", "practice.js"` aft
 - [ ] **Step 5: Test and build**
 
 Run: `npm test 2>&1 | grep -E "^ℹ (tests|pass|fail)"`
-Expected: `ℹ tests 98`, `ℹ pass 98`, `ℹ fail 0`.
+Expected: `ℹ tests 104`, `ℹ pass 104`, `ℹ fail 0`.
 
 Run: `npm run build && unzip -l dist/chessbot-chrome-v3.4.0.zip | grep -E "practice|deck|weakness|training-store|board-setup"`
 Expected: `board-setup.js`, `deck.js`, `practice.css`, `practice.html`, `practice.js`, `training-store.js`, and `weakness.js` are all listed.
@@ -3039,7 +3040,7 @@ Change the supported-versions rows to:
 - [ ] **Step 6: Final verification**
 
 Run: `npm test 2>&1 | grep -E "^ℹ (tests|pass|fail)"`
-Expected: `ℹ tests 98`, `ℹ pass 98`, `ℹ fail 0`.
+Expected: `ℹ tests 104`, `ℹ pass 104`, `ℹ fail 0`.
 
 Run: `npm run build && ls dist/*v3.5.0.zip && unzip -p dist/chessbot-chrome-v3.5.0.zip manifest.json | grep '"version"'`
 Expected: both v3.5.0 zips exist, and the manifest shows `"version": "3.5.0"`.
