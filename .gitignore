@@ -6,3 +6,6 @@ vendor/
 
 __pycache__/
 .claude/launch.json
+
+# Local tooling
+.playwright-mcp/
