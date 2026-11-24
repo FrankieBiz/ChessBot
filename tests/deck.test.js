@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  OUTCOMES, REVIEW_INTERVALS, addDays, applyResult, isDue, localDate, newSchedule, puzzleId, puzzlePosition, puzzleReview, puzzlesFromDecisions, resetPuzzle,
+  OUTCOMES, REVIEW_INTERVALS, addDays, advanceQueue, applyResult, buildSession, currentId, dueCount, isDue, isRepeat, localDate, newSchedule, puzzleId, puzzlePosition, puzzleReview, puzzlesFromDecisions, resetPuzzle, startQueue,
 } from "../deck.js";
-import { decision } from "./fixtures/training.js";
+import { decision, puzzle } from "./fixtures/training.js";
 
 const base = { gameKey: "g", color: "w", opponent: "Rival", gameDate: "2026-11-23" };
 
@@ -141,4 +141,62 @@ test("a puzzle is due on or after its date until it is mastered, and a reset bri
   assert.equal(reset.schedule.mastered, false);
   assert.equal(reset.schedule.step, 0);
   assert.equal(reset.schedule.due, "2026-12-02");
+});
+
+const ids = (puzzles) => puzzles.map((p) => p.id);
+
+test("today's session takes due puzzles, most overdue first, up to the daily cap", () => {
+  const puzzles = [
+    puzzle("a", { due: "2026-11-24", gameKey: "g1" }),
+    puzzle("b", { due: "2026-11-22", gameKey: "g2" }),
+    puzzle("c", { due: "2026-11-25", gameKey: "g3" }),
+    puzzle("d", { mastered: true, gameKey: "g4" }),
+    puzzle("e", { due: "2026-11-23", gameKey: "g5" }),
+  ];
+  assert.deepEqual(ids(buildSession(puzzles, { today: "2026-11-24" })), ["b", "e", "a"]);
+  assert.deepEqual(ids(buildSession(puzzles, { today: "2026-11-24", cap: 2 })), ["b", "e"]);
+  assert.equal(dueCount(puzzles, "2026-11-24"), 3);
+});
+
+test("puzzles already practiced today count toward the daily cap", () => {
+  const puzzles = [
+    puzzle("a", { gameKey: "g1" }),
+    puzzle("b", { gameKey: "g2" }),
+    puzzle("done", { due: "2026-11-27", lastReviewed: "2026-11-24", gameKey: "g3" }),
+  ];
+  assert.deepEqual(ids(buildSession(puzzles, { today: "2026-11-24", cap: 2 })), ["a"]);
+});
+
+test("the session avoids repeating a game first and a theme second", () => {
+  const puzzles = [
+    puzzle("a1", { gameKey: "A", theme: "hanging", createdAt: "2026-11-01" }),
+    puzzle("a2", { gameKey: "A", theme: "hanging", createdAt: "2026-11-02" }),
+    puzzle("b1", { gameKey: "B", theme: "hanging", createdAt: "2026-11-03" }),
+    puzzle("c1", { gameKey: "C", theme: "missed-mate", createdAt: "2026-11-04" }),
+  ];
+  assert.deepEqual(ids(buildSession(puzzles, { today: "2026-11-24" })), ["a1", "c1", "a2", "b1"]);
+});
+
+test("theme practice puts due puzzles first, includes ones not yet due, and skips mastered ones", () => {
+  const puzzles = [
+    puzzle("later", { due: "2026-12-01", gameKey: "g1" }),
+    puzzle("due", { due: "2026-11-20", gameKey: "g2" }),
+    puzzle("other", { due: "2026-11-20", theme: "missed-mate", gameKey: "g3" }),
+    puzzle("done", { mastered: true, gameKey: "g4" }),
+  ];
+  const session = buildSession(puzzles, { today: "2026-11-24", filter: (p) => p.theme === "hanging" });
+  assert.deepEqual(ids(session), ["due", "later"]);
+});
+
+test("a failed puzzle comes back once at the end of the session", () => {
+  let queue = startQueue([puzzle("a"), puzzle("b")]);
+  assert.equal(currentId(queue), "a");
+  assert.equal(isRepeat(queue), false);
+  queue = advanceQueue(queue, OUTCOMES.fail);
+  assert.equal(currentId(queue), "b");
+  queue = advanceQueue(queue, OUTCOMES.pass);
+  assert.equal(currentId(queue), "a");
+  assert.equal(isRepeat(queue), true);
+  queue = advanceQueue(queue, OUTCOMES.fail);
+  assert.equal(currentId(queue), null);
 });

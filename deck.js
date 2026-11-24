@@ -127,3 +127,64 @@ export function resetPuzzle(puzzle, today) {
     schedule: { ...puzzle.schedule, step: 0, due: addDays(today, REVIEW_INTERVALS[0]), mastered: false },
   };
 }
+
+export const dueCount = (puzzles, today) => puzzles.filter((puzzle) => isDue(puzzle, today)).length;
+
+const byDue = (a, b) => (a.schedule.due ?? "").localeCompare(b.schedule.due ?? "") ||
+  a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id);
+
+/** Reorder so consecutive puzzles avoid the same game first and the same theme second, when possible. */
+export function interleave(puzzles) {
+  const remaining = puzzles.slice();
+  const ordered = [];
+  while (remaining.length) {
+    const last = ordered.at(-1);
+    let index = 0;
+    if (last) {
+      const candidates = [
+        remaining.findIndex((p) => p.gameKey !== last.gameKey && p.theme !== last.theme),
+        remaining.findIndex((p) => p.gameKey !== last.gameKey),
+        remaining.findIndex((p) => p.theme !== last.theme),
+      ];
+      index = candidates.find((candidate) => candidate >= 0) ?? 0;
+    }
+    ordered.push(...remaining.splice(index, 1));
+  }
+  return ordered;
+}
+
+/**
+ * Today's puzzles: due ones, most overdue first, up to the daily cap minus puzzles already practiced
+ * today. With `filter`, a theme-practice set instead: matching puzzles that aren't mastered, due ones
+ * first, up to the cap.
+ */
+export function buildSession(puzzles, { today, cap = DEFAULT_DAILY_CAP, filter = null }) {
+  const open = puzzles.filter((puzzle) => !puzzle.schedule.mastered);
+  if (filter) {
+    const matching = open.filter(filter)
+      .sort((a, b) => Number(isDue(b, today)) - Number(isDue(a, today)) || byDue(a, b));
+    return interleave(matching.slice(0, cap));
+  }
+  const practicedToday = puzzles.filter((puzzle) => puzzle.schedule.lastReviewed === today).length;
+  const room = Math.max(0, cap - practicedToday);
+  return interleave(open.filter((puzzle) => isDue(puzzle, today)).sort(byDue).slice(0, room));
+}
+
+/** A session queue. A failed puzzle comes back once at the end, and that repeat never changes its schedule. */
+export function startQueue(puzzles) {
+  return { ids: puzzles.map((puzzle) => puzzle.id), index: 0, firstPass: puzzles.length, requeued: [] };
+}
+
+export const currentId = (queue) => queue.ids[queue.index] ?? null;
+export const isRepeat = (queue) => queue.index >= queue.firstPass;
+
+export function advanceQueue(queue, outcome) {
+  const id = currentId(queue);
+  const requeue = Boolean(id) && outcome === OUTCOMES.fail && !isRepeat(queue) && !queue.requeued.includes(id);
+  return {
+    ...queue,
+    index: queue.index + 1,
+    ids: requeue ? [...queue.ids, id] : queue.ids,
+    requeued: requeue ? [...queue.requeued, id] : queue.requeued,
+  };
+}
