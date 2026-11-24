@@ -176,8 +176,8 @@ No new extension permissions.
 | `practice:settings` | `{ dailyCap }` |
 
 - One key per record, so the review tab and a Practice tab can write at the same time without overwriting each other's records. Loading reads all keys and filters by prefix.
-- **Size:** about 6 KB per game (PGN about 2 KB, summary about 1 KB, about 5 puzzles at about 600 bytes). Chrome's `storage.local` quota is 10 MB.
-- **Pruning:** when more than 500 game records exist, remove the oldest by `reviewedAt` together with their mastered puzzles. Unmastered puzzles are always kept.
+- **Size:** about 12 KB per game: the game record with its PGN is about 4 KB, and about 5 puzzles take about 1.6 KB each, mostly the move history and Stockfish lines. Chrome's `storage.local` quota is 10 MB and is shared with the rest of the extension.
+- **Pruning:** keep at most 300 game records, removing the oldest by `reviewedAt` (a missing `reviewedAt` counts as oldest). Puzzles whose game has been removed are orphans. Mastered orphans are removed, and at most 500 unmastered orphans are kept, oldest removed first. The worst case is about 4.5 MB.
 - **Version:** if `training:version` is greater than the supported version, the Practice page is read-only and `review.js` does not record.
 
 ### Build order
@@ -221,7 +221,7 @@ No new extension permissions.
 - **Storage:**
   - Records are written under one key each.
   - The version check makes newer data read-only.
-  - Pruning above 500 games keeps unmastered puzzles.
+  - Pruning above 300 games removes mastered orphans, including ones mastered after their game was removed, and caps unmastered orphans at 500.
   - Game identity is stable for the same PGN with different headers.
 - **Fixture:** puzzles and a summary built from a saved review of the 1858 Opera Game.
 

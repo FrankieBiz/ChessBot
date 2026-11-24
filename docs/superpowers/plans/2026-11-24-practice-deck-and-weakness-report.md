@@ -37,6 +37,7 @@ The code reading behind this plan led to five small refinements. Each one keeps 
 6. **Code review of Tasks 3–5 added a fix commit with six more tests (77 after Task 5).** `applyResult` now works out "early" itself, and early practice no longer counts toward the daily cap. `puzzlesFromDecisions` ignores other games' puzzles, and `isRepeat` is false for an empty queue. Later expected counts include these tests.
 7. **Code review of Tasks 6–8 added two tests (97 after Task 8).** "Your main focus" is left out when the top two mistake types tie.
 8. **Only the user's own games are recorded.** `detectPlayedColor` falls back to White when the username matches neither player, so Task 10 records a game only when the side is confirmed: chosen in Load PGN, reopened from the Practice page, or matched to the Chess.com username.
+9. **Code review of Task 9 bounded storage (114 tests after Task 9).** `MAX_GAMES` is 300. Pruning removes mastered orphan puzzles even when their game was removed earlier, and keeps at most 500 unmastered orphans (`MAX_ORPHAN_PUZZLES`). One version rule applies to every read and write. Malformed records are skipped. `savePuzzle` returns false instead of bringing back a puzzle that a re-review removed. A failed prune no longer fails the save.
 
 ## File map
 
@@ -2111,7 +2112,7 @@ Expected: the list includes `"board-setup.js"`, `"deck.js"`, `"training-store.js
 - [ ] **Step 10: Test and build**
 
 Run: `npm test 2>&1 | grep -E "^ℹ (tests|pass|fail)"`
-Expected: `ℹ tests 106`, `ℹ pass 106`, `ℹ fail 0`.
+Expected: `ℹ tests 114`, `ℹ pass 114`, `ℹ fail 0`.
 
 Run: `npm run build`
 Expected: both zips build with no errors.
@@ -2844,7 +2845,7 @@ In `scripts/build.mjs`, add `"practice.css", "practice.html", "practice.js"` aft
 - [ ] **Step 5: Test and build**
 
 Run: `npm test 2>&1 | grep -E "^ℹ (tests|pass|fail)"`
-Expected: `ℹ tests 106`, `ℹ pass 106`, `ℹ fail 0`.
+Expected: `ℹ tests 114`, `ℹ pass 114`, `ℹ fail 0`.
 
 Run: `npm run build && unzip -l dist/chessbot-chrome-v3.4.0.zip | grep -E "practice|deck|weakness|training-store|board-setup"`
 Expected: `board-setup.js`, `deck.js`, `practice.css`, `practice.html`, `practice.js`, `training-store.js`, and `weakness.js` are all listed.
@@ -3070,7 +3071,7 @@ Change the supported-versions rows to:
 - [ ] **Step 6: Final verification**
 
 Run: `npm test 2>&1 | grep -E "^ℹ (tests|pass|fail)"`
-Expected: `ℹ tests 106`, `ℹ pass 106`, `ℹ fail 0`.
+Expected: `ℹ tests 114`, `ℹ pass 114`, `ℹ fail 0`.
 
 Run: `npm run build && ls dist/*v3.5.0.zip && unzip -p dist/chessbot-chrome-v3.5.0.zip manifest.json | grep '"version"'`
 Expected: both v3.5.0 zips exist, and the manifest shows `"version": "3.5.0"`.
