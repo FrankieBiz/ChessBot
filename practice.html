@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ChessBot Practice</title>
+  <link rel="icon" type="image/svg+xml" href="./icons/icon.svg" />
+  <link rel="stylesheet" href="./vendor/cm-chessboard/assets/chessboard.css" />
+  <link rel="stylesheet" href="./vendor/cm-chessboard/assets/extensions/arrows/arrows.css" />
+  <link rel="stylesheet" href="./vendor/cm-chessboard/assets/extensions/markers/markers.css" />
+  <link rel="stylesheet" href="./vendor/cm-chessboard/assets/extensions/promotion-dialog/promotion-dialog.css" />
+  <link rel="stylesheet" href="./review.css" />
+  <link rel="stylesheet" href="./practice.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-left">
+      <img src="./icons/icon.svg" alt="" class="brand-icon" />
+      <div class="brand-text">
+        <div class="brand-title-row">
+          <h1>Practice</h1>
+        </div>
+        <span id="practiceSubtitle" class="game-meta">Loading your puzzles…</span>
+      </div>
+    </div>
+
+    <div class="topbar-controls">
+      <label class="depth-control" for="dailyCapInput">
+        <span>Daily puzzles</span>
+        <input id="dailyCapInput" class="cap-input" type="number" min="1" max="200" step="1" value="20" />
+      </label>
+      <a class="btn btn-secondary" href="./review.html">Back to review</a>
+    </div>
+  </header>
+
+  <p id="practiceNotice" class="practice-notice hidden" role="status"></p>
+
+  <main class="studio">
+    <section class="board-column">
+      <div class="board-frame">
+        <div class="board-stage">
+          <div id="boardThemeWrap" class="board-container-wrap theme-emerald">
+            <div id="board" class="chessboard-mount"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <aside class="inspector">
+      <nav class="sidebar-tabs practice-tabs" role="tablist">
+        <button id="tabSessionBtn" class="tab-btn active" type="button" role="tab" aria-selected="true">
+          Today <span id="dueCount" class="tab-count">0</span>
+        </button>
+        <button id="tabReportBtn" class="tab-btn" type="button" role="tab" aria-selected="false">
+          Weaknesses
+        </button>
+      </nav>
+
+      <div id="panelSession" class="tab-panel">
+        <div class="inspector-scroll drill-panel">
+          <div class="drill-top-row">
+            <span id="sessionBadge" class="drill-badge">DAILY REVIEW</span>
+            <strong id="sessionCounter"></strong>
+          </div>
+          <p id="puzzleContext" class="puzzle-context"></p>
+          <p id="puzzlePrompt" class="drill-prompt hidden"></p>
+
+          <div id="puzzleControls" class="drill-controls hidden">
+            <button id="hintBtn" class="btn btn-secondary" type="button">Hint</button>
+            <button id="revealBtn" class="btn btn-secondary" type="button">Show Answer</button>
+            <button id="showLineBtn" class="btn btn-secondary hidden" type="button">Show line</button>
+            <a id="openGameLink" class="btn btn-secondary hidden" href="./review.html">Open game</a>
+            <button id="nextBtn" class="btn btn-primary-cta hidden" type="button">Next →</button>
+          </div>
+
+          <div id="sessionDone" class="drill-done hidden">
+            <h3 id="sessionDoneTitle">Done for today</h3>
+            <p id="sessionDoneText"></p>
+            <button id="backToDailyBtn" class="btn btn-secondary hidden" type="button">Back to today's puzzles</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="panelReport" class="tab-panel hidden">
+        <div id="reportBody" class="inspector-scroll report"></div>
+      </div>
+    </aside>
+  </main>
+
+  <script type="module" src="./practice.js"></script>
+</body>
+</html>
