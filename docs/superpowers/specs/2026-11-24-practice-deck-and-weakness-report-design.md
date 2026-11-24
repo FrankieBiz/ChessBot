@@ -177,7 +177,7 @@ No new extension permissions.
 
 - One key per record, so the review tab and a Practice tab can write at the same time without overwriting each other's records. Loading reads all keys and filters by prefix.
 - **Size:** about 12 KB per game: the game record with its PGN is about 4 KB, and about 5 puzzles take about 1.6 KB each, mostly the move history and Stockfish lines. Chrome's `storage.local` quota is 10 MB and is shared with the rest of the extension.
-- **Pruning:** keep at most 300 game records, removing the oldest by `reviewedAt` (a missing `reviewedAt` counts as oldest). Puzzles whose game has been removed are orphans. Mastered orphans are removed, and at most 500 unmastered orphans are kept, oldest removed first. The worst case is about 4.5 MB.
+- **Pruning:** keep at most 300 game records, removing the oldest by `reviewedAt` (a missing `reviewedAt` counts as oldest). Puzzles whose game has been removed are orphans. Mastered orphans are removed, and at most 500 unmastered orphans are kept, oldest removed first. With about 5 puzzles per game that is about 4.5 MB. A player averaging 12 puzzles per game in long games reaches about 8.5 MB, still inside the quota.
 - **Version:** if `training:version` is greater than the supported version, the Practice page is read-only and `review.js` does not record.
 
 ### Build order
