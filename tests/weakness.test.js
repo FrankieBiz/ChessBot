@@ -3,6 +3,8 @@ import { readFile } from "node:fs/promises";
 import { test } from "node:test";
 import { THEMES, gameDate, isLowClock, themeForTag, themeLabel, userResult } from "../weakness.js";
 import { parseReviewGame } from "../analysis.js";
+import { computeGameInsights } from "../coach.js";
+import { computeProGameAccuracy, evalToWinWhite } from "../engine.js";
 import { gameAccuracy, reportFilter, summarizeGame, userDecisions, weaknessReport } from "../weakness.js";
 import { decision } from "./fixtures/training.js";
 
@@ -121,9 +123,20 @@ test("Black's decisions use Black's clock and expected score, and forced moves a
 });
 
 test("game accuracy matches the review page's overall and phase scores", () => {
-  const { accuracy, phaseAccuracy } = gameAccuracy({ ...clockReview(), playedColor: "w" });
-  assert.equal(typeof accuracy, "number");
-  assert.deepEqual(Object.keys(phaseAccuracy).sort(), ["endgame", "middlegame", "opening"]);
+  const source = clockReview();
+  source.moveReviews = source.moveReviews.map((review, ply) => {
+    if (!review) return review;
+    if (ply % 2 === 0) return { ...review, accuracy: 10 };
+    return ply === 3 ? { ...review, forced: true, accuracy: 0 } : { ...review, accuracy: 90 };
+  });
+  const { positions, evals, moveReviews } = source;
+  const winTimeline = evals.map((e) => evalToWinWhite(e.eval));
+  const userMoves = [1, 5].map((ply) => ({ ply, accuracy: 90 }));
+  const result = gameAccuracy({ ...source, playedColor: "w" });
+  assert.equal(result.accuracy, computeProGameAccuracy(winTimeline, userMoves));
+  assert.deepEqual(result.phaseAccuracy, computeGameInsights({ positions, winTimeline, moveReviews, playedColor: "w" }));
+  const withForced = computeProGameAccuracy(winTimeline, [{ ply: 1, accuracy: 90 }, { ply: 3, accuracy: 0 }, { ply: 5, accuracy: 90 }]);
+  assert.notEqual(result.accuracy, withForced);
 });
 
 test("a game summary keeps counts, clock totals, the best expected score, and each mistake", () => {
@@ -280,4 +293,21 @@ test("report filters select the matching puzzles", () => {
   assert.equal(reportFilter("unconverted", ["g4"])(p), true);
   assert.equal(reportFilter("unconverted", ["g1"])(p), false);
   assert.throws(() => reportFilter("rating"), /Unknown report filter/);
+});
+
+test("a tie at the top has no main focus", () => {
+  const games = [0, 1, 2, 3, 4].map((i) => game(i));
+  games[0].mistakes = [...Array(6).fill(0).map(() => mistake("positional")), ...Array(6).fill(0).map(() => mistake("hanging"))];
+  const { themes } = weaknessReport(games);
+  assert.equal(themes.focus, null);
+  assert.deepEqual(themes.common.map((row) => row.id).sort(), ["hanging", "positional"]);
+});
+
+test("a mistake type needs three cases to leave Less common", () => {
+  const games = [0, 1, 2, 3, 4].map((i) => game(i));
+  games[0].mistakes = [mistake("allowed-tactic"), mistake("allowed-tactic"), mistake("missed-mate")];
+  games[1].mistakes = [mistake("allowed-tactic"), mistake("missed-mate")];
+  const { themes } = weaknessReport(games);
+  assert.deepEqual(themes.common.map((row) => row.id), ["allowed-tactic"]);
+  assert.deepEqual(themes.lessCommon.map((row) => row.id), ["missed-mate"]);
 });

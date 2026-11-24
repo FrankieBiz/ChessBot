@@ -171,7 +171,7 @@ export function weaknessReport(summaries) {
   }).filter((row) => row.count > 0).sort((a, b) => b.count - a.count || a.order - b.order);
   const common = rows.filter((row) => row.count >= ROW_MIN_CASES);
   const lessCommon = rows.filter((row) => row.count < ROW_MIN_CASES);
-  const focus = common[0]?.count >= FOCUS_MIN_CASES ? common[0].id : null;
+  const focus = common[0]?.count >= FOCUS_MIN_CASES && !(rows[1]?.count >= common[0].count) ? common[0].id : null;
 
   const rated = mistakes.filter((m) => Number.isFinite(m.findChance));
   const easy = {
