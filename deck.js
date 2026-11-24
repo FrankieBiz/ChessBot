@@ -1,4 +1,4 @@
-// Spaced review of the user's own mistakes. Pure functions: no storage, clock, or DOM access.
+// Spaced review of the user's own mistakes. Pure functions: no storage or DOM access. Only localDate() reads the clock, and only when called without a date.
 
 /** Days until each review. Passing the last review masters the puzzle. */
 export const REVIEW_INTERVALS = [1, 3, 7, 21, 60];
@@ -37,6 +37,7 @@ const storedLine = ({ pv, eval: evaluation, winWhite }) => ({ pv: pv.slice(0, ST
  * their schedule and creation date. Returns the puzzles to save and the IDs of puzzles to delete.
  */
 export function puzzlesFromDecisions({ gameKey, color, opponent, gameDate, decisions, today, existing = [] }) {
+  existing = existing.filter((puzzle) => puzzle.gameKey === gameKey);
   const previous = new Map(existing.map((puzzle) => [puzzle.id, puzzle]));
   const puzzles = decisions
     .filter((decision) => PUZZLE_GRADES.has(decision.review.classification.key))
@@ -96,15 +97,19 @@ export const OUTCOMES = Object.freeze({ pass: "pass", fail: "fail", unverified: 
 export const isDue = (puzzle, today) => !puzzle.schedule.mastered && puzzle.schedule.due <= today;
 
 /**
- * The puzzle after one session result. `early` marks practice before the due date: a pass then
- * leaves the step and due date as they were, while a fail still resets them. An unverified result
- * (Stockfish couldn't check the move) changes nothing.
+ * The puzzle after one session result. Practice before the due date is early: a pass then leaves the
+ * step and due date as they were, while a fail still resets them, and neither sets `lastReviewed`.
+ * Only results on due puzzles set `lastReviewed`, which buildSession counts toward the daily cap.
+ * An unverified result (Stockfish couldn't check the move) changes nothing.
  */
-export function applyResult(puzzle, outcome, today, { early = false } = {}) {
+export function applyResult(puzzle, outcome, today) {
   if (outcome === OUTCOMES.unverified) return puzzle;
   if (outcome !== OUTCOMES.pass && outcome !== OUTCOMES.fail) throw new Error(`Unknown outcome: ${outcome}`);
+  const early = !isDue(puzzle, today);
   const current = puzzle.schedule;
-  const schedule = { ...current, attempts: current.attempts + 1, lastResult: outcome, lastReviewed: today };
+  const schedule = {
+    ...current, attempts: current.attempts + 1, lastResult: outcome, lastReviewed: early ? current.lastReviewed : today,
+  };
   if (outcome === OUTCOMES.fail) {
     Object.assign(schedule, {
       step: 0, due: addDays(today, REVIEW_INTERVALS[0]), mastered: false, lapses: current.lapses + 1,
@@ -176,7 +181,7 @@ export function startQueue(puzzles) {
 }
 
 export const currentId = (queue) => queue.ids[queue.index] ?? null;
-export const isRepeat = (queue) => queue.index >= queue.firstPass;
+export const isRepeat = (queue) => queue.index >= queue.firstPass && queue.index < queue.ids.length;
 
 export function advanceQueue(queue, outcome) {
   const id = currentId(queue);

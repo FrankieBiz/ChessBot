@@ -3,6 +3,8 @@ import { test } from "node:test";
 import {
   OUTCOMES, REVIEW_INTERVALS, addDays, advanceQueue, applyResult, buildSession, currentId, dueCount, isDue, isRepeat, localDate, newSchedule, puzzleId, puzzlePosition, puzzleReview, puzzlesFromDecisions, resetPuzzle, startQueue,
 } from "../deck.js";
+import { compareRootMoves } from "../analysis.js";
+import { judgeDrillAttempt } from "../drills.js";
 import { decision, puzzle } from "./fixtures/training.js";
 
 const base = { gameKey: "g", color: "w", opponent: "Rival", gameDate: "2026-11-23" };
@@ -122,13 +124,15 @@ test("an unknown result is a programming error", () => {
 
 test("practice before the due date never moves a puzzle forward, but a fail still resets it", () => {
   const p = { id: "g:5", schedule: { ...newSchedule("2026-11-01"), step: 2, due: "2026-11-20" } };
-  const passed = applyResult(p, OUTCOMES.pass, "2026-11-10", { early: true });
+  const passed = applyResult(p, OUTCOMES.pass, "2026-11-10");
   assert.equal(passed.schedule.step, 2);
   assert.equal(passed.schedule.due, "2026-11-20");
   assert.equal(passed.schedule.attempts, 1);
-  const failed = applyResult(p, OUTCOMES.fail, "2026-11-10", { early: true });
+  assert.equal(passed.schedule.lastReviewed, null);
+  const failed = applyResult(p, OUTCOMES.fail, "2026-11-10");
   assert.equal(failed.schedule.step, 0);
   assert.equal(failed.schedule.due, "2026-11-11");
+  assert.equal(failed.schedule.lastReviewed, null);
 });
 
 test("a puzzle is due on or after its date until it is mastered, and a reset brings it back tomorrow", () => {
@@ -192,6 +196,7 @@ test("a failed puzzle comes back once at the end of the session", () => {
   let queue = startQueue([puzzle("a"), puzzle("b")]);
   assert.equal(currentId(queue), "a");
   assert.equal(isRepeat(queue), false);
+  assert.equal(isRepeat(startQueue([])), false);
   queue = advanceQueue(queue, OUTCOMES.fail);
   assert.equal(currentId(queue), "b");
   queue = advanceQueue(queue, OUTCOMES.pass);
@@ -199,4 +204,55 @@ test("a failed puzzle comes back once at the end of the session", () => {
   assert.equal(isRepeat(queue), true);
   queue = advanceQueue(queue, OUTCOMES.fail);
   assert.equal(currentId(queue), null);
+});
+
+test("an early pass at the last step does not master the puzzle", () => {
+  const p = { id: "g:5", schedule: { ...newSchedule("2026-11-01"), step: 4, due: "2027-01-01" } };
+  const passed = applyResult(p, OUTCOMES.pass, "2026-12-01");
+  assert.equal(passed.schedule.mastered, false);
+  assert.equal(passed.schedule.step, 4);
+  assert.equal(passed.schedule.due, "2027-01-01");
+});
+
+test("existing puzzles from other games are never deleted", () => {
+  const [mine] = puzzlesFromDecisions({ ...base, decisions: [decision({ ply: 5 })], today: "2026-11-01" }).puzzles;
+  const other = { ...mine, id: "other:7", gameKey: "other" };
+  const { removedIds } = puzzlesFromDecisions({
+    ...base, decisions: [decision({ ply: 9, grade: "good" })], today: "2026-11-24", existing: [mine, other],
+  });
+  assert.deepEqual(removedIds, ["g:5"]);
+});
+
+test("no room is left when more puzzles were practiced today than the cap", () => {
+  const puzzles = [
+    puzzle("x", { due: "2026-11-30", lastReviewed: "2026-11-24", gameKey: "g1" }),
+    puzzle("y", { due: "2026-11-30", lastReviewed: "2026-11-24", gameKey: "g2" }),
+    puzzle("z", { gameKey: "g3" }),
+  ];
+  assert.deepEqual(buildSession(puzzles, { today: "2026-11-24", cap: 1 }), []);
+});
+
+test("theme practice respects the cap", () => {
+  const puzzles = [puzzle("a", { gameKey: "g1" }), puzzle("b", { gameKey: "g2" }), puzzle("c", { gameKey: "g3" })];
+  const session = buildSession(puzzles, { today: "2026-11-24", cap: 2, filter: () => true });
+  assert.equal(session.length, 2);
+});
+
+test("practicing ahead of schedule leaves room for today's due puzzles", () => {
+  const ahead = [
+    puzzle("h1", { due: "2026-12-10", gameKey: "g1" }),
+    puzzle("h2", { due: "2026-12-10", gameKey: "g2" }),
+  ].map((p) => applyResult(p, OUTCOMES.pass, "2026-11-24"));
+  const due = puzzle("m", { theme: "missed-mate", due: "2026-11-24", gameKey: "g3" });
+  assert.deepEqual(ids(buildSession([...ahead, due], { today: "2026-11-24", cap: 2 })), ["m"]);
+});
+
+test("a saved puzzle compares a move from its stored lines without Stockfish", async () => {
+  const [p] = puzzlesFromDecisions({ ...base, decisions: [decision()], today: "2026-11-01" }).puzzles;
+  const comparison = await compareRootMoves(null, puzzlePosition(p), "f1c4", p.depth, p.root);
+  const verdict = judgeDrillAttempt({
+    attemptUci: "f1c4", gameUci: "a2a3", review: puzzleReview(p), color: "w", comparison,
+  });
+  assert.equal(verdict.verdict, "alternative");
+  assert.equal(verdict.loss, 1);
 });
