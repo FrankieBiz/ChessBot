@@ -23,6 +23,9 @@ import { AI_PRESETS, coachEndpoint, coachRequestBody, migrateCoachSettings } fro
 import { trainingPriority } from "./practical-model.js";
 import { computeDecisionQuality } from "./decision-quality.js";
 import { drillHint, drillPrompt, drillRejection, drillSuccess, judgeDrillAttempt } from "./drills.js";
+import { dueCount, localDate, puzzlesFromDecisions } from "./deck.js";
+import { gameAccuracy, gameDate, summarizeGame, userDecisions, userResult } from "./weakness.js";
+import { gameKeyFor, loadTraining, saveReview, webStorageArea } from "./training-store.js";
 import { describeVariation, moveToUci, parseUciMove, replayVariation } from "./variation.js";
 import {
   HUMAN_MOVE_SEARCH_DEPTH, candidateScores, forecastHumanMoves, humanContext, moveFeatureRows,
@@ -31,6 +34,7 @@ import { HUMAN_MOVE_MODEL } from "./human-move-data.js";
 import { STOCKFISH_WORKER_PATH } from "./vendor/stockfish/engine-config.js";
 
 const extension = globalThis.browser ?? globalThis.chrome;
+const trainingArea = extension?.storage?.local ?? webStorageArea(globalThis.localStorage);
 const SVG_NS = "http://www.w3.org/2000/svg";
 const RING_CIRCUMFERENCE = 2 * Math.PI * 22;
 const ARROW_BEST = { class: "arrow-best" };
@@ -122,6 +126,7 @@ function playSound(kind = "move") {
 
 const state = {
   gameMeta: null,
+  gameHeaders: null,
   positions: [],
   evals: [],
   moveReviews: [],
@@ -175,6 +180,8 @@ const dom = {
   soundOnIcon: document.getElementById("soundOnIcon"),
   soundOffIcon: document.getElementById("soundOffIcon"),
   settingsBtn: document.getElementById("settingsBtn"),
+  practiceDueBadge: document.getElementById("practiceDueBadge"),
+  trainingNotice: document.getElementById("trainingNotice"),
 
   progressBarWrap: document.getElementById("progressBarWrap"),
   progressFill: document.getElementById("progressFill"),
@@ -746,6 +753,8 @@ function loadGameFromPayload(payload) {
     return { ok: false, error: `Could not parse PGN: ${err.message}` };
   }
   const { headers, positions } = game;
+  state.gameHeaders = headers;
+  dom.trainingNotice.classList.add("hidden");
   if (state.isAnalyzing) engine?.abort();
   state.analysisRunId++;
   state.isAnalyzing = false;
@@ -826,6 +835,81 @@ function renderPlayerStrips() {
   dom.bottomPlayerSwatch.className = `player-swatch ${bottomColor}`;
   dom.bottomPlayerName.textContent = bottom.username;
   dom.bottomPlayerRating.textContent = bottom.rating ? `(${bottom.rating})` : "";
+}
+
+function showTrainingNotice(text) {
+  dom.trainingNotice.textContent = text;
+  dom.trainingNotice.classList.remove("hidden");
+}
+
+/** Show how many practice puzzles are due on the header's Practice link. */
+async function refreshPracticeBadge() {
+  try {
+    const data = await loadTraining(trainingArea);
+    const due = dueCount([...data.puzzles.values()], localDate());
+    dom.practiceDueBadge.textContent = String(due);
+    dom.practiceDueBadge.classList.toggle("hidden", due === 0);
+  } catch {
+    dom.practiceDueBadge.classList.add("hidden");
+  }
+}
+
+/**
+ * The user's side when it is known: chosen in Load PGN, reopened from the Practice page, or matched
+ * to the Chess.com username. A Chess.com game where neither player matches isn't the user's game.
+ */
+function confirmedColor(meta) {
+  if (meta.colorConfirmed) return meta.playedColor;
+  const user = (meta.username || "").trim().toLowerCase();
+  if (user && meta.white?.username?.toLowerCase() === user) return "w";
+  if (user && meta.black?.username?.toLowerCase() === user) return "b";
+  return null;
+}
+
+/** Save the finished review's summary and the user's mistakes as practice puzzles. */
+async function recordReviewedGame(runId, depth) {
+  const meta = state.gameMeta;
+  const playedColor = meta ? confirmedColor(meta) : null;
+  if (!meta?.pgn || !playedColor) return;
+  try {
+    const data = await loadTraining(trainingArea);
+    if (!data.writable || runId !== state.analysisRunId) return;
+
+    const { initialFen, history } = state.positions.at(-1).searchOptions;
+    const gameKey = await gameKeyFor({ gameId: meta.gameId, initialFen, history });
+    const today = localDate();
+    const source = { positions: state.positions, evals: state.evals, moveReviews: state.moveReviews, playedColor };
+    const decisions = userDecisions(source);
+    const opponent = (playedColor === "w" ? meta.black : meta.white)?.username ?? "";
+    const date = gameDate({ endTime: meta.endTime, headers: state.gameHeaders ?? {} }, today);
+    const summary = summarizeGame({
+      gameKey,
+      reviewedAt: data.games.get(gameKey)?.reviewedAt ?? Date.now(),
+      date,
+      color: playedColor,
+      result: userResult(meta.result, playedColor),
+      timeClass: meta.timeClass,
+      opponent,
+      depth,
+      decisions,
+      ...gameAccuracy(source),
+    });
+    const existing = [...data.puzzles.values()].filter((puzzle) => puzzle.gameKey === gameKey);
+    const { puzzles, removedIds } = puzzlesFromDecisions({
+      gameKey, color: playedColor, opponent, gameDate: date, decisions, today, existing,
+    });
+    const game = {
+      ...summary,
+      gameId: meta.gameId ?? null,
+      pgn: meta.pgn,
+      timeControl: meta.timeControl ?? null,
+      endTime: meta.endTime ?? null,
+    };
+    await saveReview(trainingArea, { game, puzzles, removedIds });
+    if (runId === state.analysisRunId) await refreshPracticeBadge();
+  } catch {
+    if (runId === state.analysisRunId) showTrainingNotice("Couldn't save practice puzzles from this game.");
+  }
 }
 
 async function runFullAnalysis() {
@@ -912,6 +996,7 @@ async function runFullAnalysis() {
     renderKeyMoments();
     updateDrillBadgeCount();
     goToPly(state.currentPly, false);
+    recordReviewedGame(runId, depth);
   } catch (err) {
     if (runId !== state.analysisRunId) return;
     dom.progressLabel.textContent = `Engine error: ${err.message}`;
@@ -2079,6 +2164,7 @@ dom.loadPgnConfirmBtn.addEventListener("click", () => {
     gameId: `manual-${Date.now()}`,
     pgn,
     playedColor: dom.pgnColorSelect.value,
+    colorConfirmed: true,
     timeClass: "Custom PGN",
   };
   const res = loadGameFromPayload(payload);
@@ -2211,6 +2297,30 @@ async function bootstrap() {
   await loadSavedSettings();
   initBoard("w");
   renderBreakdownTable();
+  refreshPracticeBadge();
+
+  // The Practice page links here with ?game=<gameKey>&ply=<ply> to open a saved game at that move.
+  const params = new URLSearchParams(location.search);
+  const requestedGame = params.get("game");
+  if (requestedGame) {
+    try {
+      const record = (await loadTraining(trainingArea)).games.get(requestedGame);
+      if (record) {
+        const res = loadGameFromPayload({
+          gameId: record.gameId, pgn: record.pgn, playedColor: record.color, colorConfirmed: true,
+          timeClass: record.timeClass, timeControl: record.timeControl, endTime: record.endTime,
+        });
+        if (res.ok) {
+          const ply = Number(params.get("ply"));
+          if (Number.isInteger(ply)) goToPly(ply, false);
+          runFullAnalysis();
+          return;
+        }
+      }
+    } catch {
+      // Fall back to the usual start.
+    }
+  }
 
   try {
     const stored = await extension.storage.local.get("activeGame");

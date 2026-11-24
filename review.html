@@ -46,6 +46,11 @@
         <span>Load PGN</span>
       </button>
 
+      <a id="practiceBtn" class="btn btn-secondary" href="./practice.html" title="Practice puzzles from your reviewed games">
+        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/></svg>
+        <span>Practice</span>
+        <span id="practiceDueBadge" class="tab-count hidden">0</span>
+      </a>
       <button id="soundToggleBtn" class="btn btn-icon" type="button" title="Toggle Move Sounds" aria-label="Toggle Move Sounds">
         <svg id="soundOnIcon" class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>
         <svg id="soundOffIcon" class="ico hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>
@@ -63,6 +68,7 @@
     </div>
     <span id="progressLabel" class="progress-label">Initializing Stockfish WASM...</span>
   </div>
+  <p id="trainingNotice" class="training-notice hidden" role="status"></p>
 
   <main class="studio">
     <!-- Left Column: Centerpiece Board Stage -->

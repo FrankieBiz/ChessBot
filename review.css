@@ -1683,3 +1683,16 @@ html, body {
   border-color: rgba(242, 107, 94, 0.55);
   color: #ffa59c;
 }
+
+/* Practice link and the practice save notice */
+a.btn {
+  text-decoration: none;
+}
+
+.training-notice {
+  max-width: 1320px;
+  margin: 8px auto 0;
+  padding: 0 24px;
+  color: var(--warning);
+  font-size: 12.5px;
+}
