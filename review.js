@@ -865,7 +865,10 @@ async function recordReviewedGame(runId, depth) {
     const playedColor = confirmedSide(meta, dom.fallbackUsernameInput.value);
     if (!playedColor) {
       if (/^\d+$/.test(String(meta.gameId ?? ""))) {
-        showTrainingNotice("Not saved for practice: ChessBot couldn't tell which side you played. Add your Chess.com username in Settings.");
+        const known = [meta.accountUsername, dom.fallbackUsernameInput.value].some((n) => typeof n === "string" && n.trim());
+        showTrainingNotice(known
+          ? "Not saved for practice: you aren't a player in this game."
+          : "Not saved for practice: ChessBot couldn't tell which side you played. Add your Chess.com username in Settings.");
       }
       return;
     }

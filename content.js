@@ -98,9 +98,13 @@
 
   /** The signed-in account's name, from the site navigation only (never the board's player tags). */
   function detectAccountUsername() {
+    const boardArea = "#board-layout-player-top, #board-layout-player-bottom, .board-layout-top, .board-layout-bottom, .player-top, .player-bottom";
     for (const sel of NAV_USERNAME_SELECTORS) {
-      const name = extractUsernameFromElement(document.querySelector(sel));
-      if (isValidUsername(name)) return name.trim();
+      for (const el of document.querySelectorAll(sel)) {
+        if (el.closest(boardArea)) continue;
+        const name = extractUsernameFromElement(el);
+        if (isValidUsername(name)) return name.trim();
+      }
     }
     return null;
   }
@@ -258,7 +262,7 @@
 
     if (!username) {
       const entered = window.prompt(
-        "Chess.com Local Game Review:\nEnter your Chess.com username (or either player's username) to fetch this game's PGN:"
+        "Chess.com Local Game Review:\nEnter your Chess.com username to fetch this game's PGN:"
       );
       if (!entered || !isValidUsername(entered)) {
         statusEl.textContent = "Please enter a valid Chess.com username.";

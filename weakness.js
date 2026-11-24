@@ -232,9 +232,11 @@ export function reportFilter(kind, value) {
 
 /**
  * The user's side when it is known: chosen in Load PGN, reopened from the Practice page, or the signed-in
- * Chess.com account (or the username saved in Settings) matching one of the players. Null otherwise.
+ * Chess.com account (or the username saved in Settings) matching one of the players. Null otherwise,
+ * including an explicit opt-out (`colorConfirmed: false`) from Load PGN.
  */
 export function confirmedSide({ colorConfirmed, playedColor, accountUsername, white, black }, fallbackUsername = null) {
+  if (colorConfirmed === false) return null;
   if (colorConfirmed) return playedColor ?? null;
   const players = { w: white?.username?.toLowerCase(), b: black?.username?.toLowerCase() };
   for (const name of [accountUsername, fallbackUsername]) {

@@ -326,3 +326,9 @@ test("a Chess.com game counts only when the signed-in account or saved username 
   assert.equal(confirmedSide({ accountUsername: "carol", white, black }, "alice"), "w");
   assert.equal(confirmedSide({ white, black }), null);
 });
+
+test("unchecking Save my mistakes for practice keeps the game out even when the PGN names the user", () => {
+  const names = { white: { username: "alice" }, black: { username: "bob" } };
+  assert.equal(confirmedSide({ colorConfirmed: false, playedColor: "b", ...names }, "alice"), null);
+  assert.equal(confirmedSide({ colorConfirmed: undefined, playedColor: "b", ...names }, "alice"), "w");
+});
