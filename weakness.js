@@ -139,3 +139,93 @@ export function summarizeGame({ gameKey, reviewedAt, date, color, result, timeCl
       .map(({ ply, theme, phase, lowClock, findChance }) => ({ ply, theme, phase, lowClock, findChance })),
   };
 }
+
+const per100 = (count, moves) => (moves ? (count / moves) * 100 : null);
+
+function weightedMean(pairs) {
+  let total = 0;
+  let weight = 0;
+  for (const [value, count] of pairs) {
+    if (Number.isFinite(value) && count > 0) {
+      total += value * count;
+      weight += count;
+    }
+  }
+  return weight ? total / weight : null;
+}
+
+/** The weakness report over the most recently reviewed games, or `{ ready: false }` until there are enough. */
+export function weaknessReport(summaries) {
+  const games = [...summaries].sort((a, b) => b.reviewedAt - a.reviewedAt).slice(0, REPORT_WINDOW);
+  if (games.length < REPORT_MIN_GAMES) return { ready: false, games: games.length, needed: REPORT_MIN_GAMES };
+
+  const moves = games.reduce((sum, game) => sum + game.decisions, 0);
+  const mistakes = games.flatMap((game) => game.mistakes.map((m) => ({ ...m, gameKey: game.gameKey })));
+
+  const rows = THEMES.map((theme, order) => {
+    const cases = mistakes.filter((m) => m.theme === theme.id);
+    return {
+      id: theme.id, label: theme.label, order, count: cases.length,
+      games: new Set(cases.map((m) => m.gameKey)).size, per100: per100(cases.length, moves),
+    };
+  }).filter((row) => row.count > 0).sort((a, b) => b.count - a.count || a.order - b.order);
+  const common = rows.filter((row) => row.count >= ROW_MIN_CASES);
+  const lessCommon = rows.filter((row) => row.count < ROW_MIN_CASES);
+  const focus = common[0]?.count >= FOCUS_MIN_CASES ? common[0].id : null;
+
+  const rated = mistakes.filter((m) => Number.isFinite(m.findChance));
+  const easy = {
+    easy: rated.filter((m) => m.findChance >= EASY_FIND_CHANCE).length,
+    rated: rated.length,
+    unrated: mistakes.length - rated.length,
+  };
+
+  const phases = Object.fromEntries(PHASES.map((phase) => {
+    const reached = games.filter((g) => g.phaseMoves[phase] > 0 && Number.isFinite(g.phaseAccuracy[phase]));
+    return [phase, {
+      games: reached.length,
+      accuracy: weightedMean(reached.map((g) => [g.phaseAccuracy[phase], g.phaseMoves[phase]])),
+    }];
+  }));
+  const overall = weightedMean(games.map((g) => [g.accuracy, g.decisions]));
+
+  const timed = games.filter((g) => g.clock);
+  let clock = null;
+  if (timed.length) {
+    const timedKeys = new Set(timed.map((g) => g.gameKey));
+    const timedMistakes = mistakes.filter((m) => timedKeys.has(m.gameKey));
+    const lowMoves = timed.reduce((sum, g) => sum + g.clock.lowDecisions, 0);
+    const otherMoves = timed.reduce((sum, g) => sum + g.clock.otherDecisions, 0);
+    const lowMistakes = timedMistakes.filter((m) => m.lowClock === true).length;
+    const otherMistakes = timedMistakes.filter((m) => m.lowClock === false).length;
+    clock = {
+      games: timed.length, lowMoves, otherMoves, lowMistakes, otherMistakes,
+      lowRate: per100(lowMistakes, lowMoves), otherRate: per100(otherMistakes, otherMoves),
+    };
+  }
+
+  const winning = games.filter((g) => Number.isFinite(g.result) && Number.isFinite(g.maxExpectedScore) &&
+    g.maxExpectedScore >= WINNING_SCORE);
+  const unconverted = winning.filter((g) => g.result < 1);
+  const conversion = { winning: winning.length, unconverted: unconverted.length, gameKeys: unconverted.map((g) => g.gameKey) };
+
+  return {
+    ready: true, games: games.length, moves, mistakes: mistakes.length,
+    themes: { common, lessCommon, focus }, easy, phases, overall, clock, conversion,
+  };
+}
+
+/** A puzzle predicate for a report row's Practice button. */
+export function reportFilter(kind, value) {
+  switch (kind) {
+    case "theme": return (puzzle) => puzzle.theme === value;
+    case "phase": return (puzzle) => puzzle.phase === value;
+    case "lowClock": return (puzzle) => puzzle.lowClock === true;
+    case "easy": return (puzzle) => Number.isFinite(puzzle.findChance) && puzzle.findChance >= EASY_FIND_CHANCE;
+    case "unconverted": {
+      const keys = new Set(value);
+      return (puzzle) => keys.has(puzzle.gameKey);
+    }
+    default: throw new Error(`Unknown report filter: ${kind}`);
+  }
+}

@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { test } from "node:test";
 import { THEMES, gameDate, isLowClock, themeForTag, themeLabel, userResult } from "../weakness.js";
 import { parseReviewGame } from "../analysis.js";
-import { gameAccuracy, summarizeGame, userDecisions } from "../weakness.js";
+import { gameAccuracy, reportFilter, summarizeGame, userDecisions, weaknessReport } from "../weakness.js";
 import { decision } from "./fixtures/training.js";
 
 test("coach tags map to report rows, and unknown tags fall back to No single tactic", () => {
@@ -159,4 +159,125 @@ test("a game without clocks or scores has null clock totals and expected score",
   assert.deepEqual(summary.phaseAccuracy, { opening: null, middlegame: null, endgame: null });
   assert.equal(summary.timeClass, "");
   assert.equal(summary.opponent, "");
+});
+
+function game(i, overrides = {}) {
+  return {
+    gameKey: `g${i}`, reviewedAt: 1000 + i, date: "2026-11-01", color: "w", result: 1, timeClass: "blitz",
+    opponent: "", depth: 16, decisions: 20, phaseMoves: { opening: 5, middlegame: 10, endgame: 5 },
+    phaseAccuracy: { opening: 90, middlegame: 80, endgame: 70 }, accuracy: 80, clock: null,
+    maxExpectedScore: 60, mistakes: [], ...overrides,
+  };
+}
+const mistake = (theme, extra = {}) => ({ ply: 9, theme, phase: "middlegame", lowClock: null, findChance: null, ...extra });
+const close = (actual, expected) => assert.ok(Math.abs(actual - expected) < 1e-9, `${actual} ≠ ${expected}`);
+
+test("the report waits for five reviewed games", () => {
+  assert.deepEqual(weaknessReport([0, 1, 2, 3].map((i) => game(i))), { ready: false, games: 4, needed: 5 });
+});
+
+test("the report covers the 50 most recently reviewed games", () => {
+  const games = Array.from({ length: 55 }, (_, i) => game(i));
+  games[0].mistakes = [mistake("hanging"), mistake("hanging"), mistake("hanging")];
+  const report = weaknessReport(games);
+  assert.equal(report.games, 50);
+  assert.equal(report.moves, 1000);
+  assert.equal(report.mistakes, 0);
+});
+
+test("mistake types are ranked, rare ones go under Less common, and main focus needs five cases", () => {
+  const positional = Array.from({ length: 5 }, () => mistake("positional"));
+  const games = [
+    game(0, { mistakes: [mistake("hanging"), mistake("hanging"), ...positional] }),
+    game(1, { mistakes: [mistake("hanging")] }),
+    game(2, { mistakes: [mistake("hanging"), mistake("allowed-tactic")] }),
+    game(3, { mistakes: [mistake("allowed-tactic")] }),
+    game(4),
+  ];
+  const { themes, moves } = weaknessReport(games);
+  assert.equal(moves, 100);
+  assert.deepEqual(themes.common.map((row) => [row.id, row.count, row.games]), [["positional", 5, 1], ["hanging", 4, 3]]);
+  assert.equal(themes.common[0].label, "No single tactic");
+  close(themes.common[0].per100, 5);
+  assert.deepEqual(themes.lessCommon.map((row) => [row.id, row.count]), [["allowed-tactic", 2]]);
+  assert.equal(themes.focus, "positional");
+
+  games[0].mistakes.pop();
+  const tied = weaknessReport(games).themes;
+  assert.deepEqual(tied.common.map((row) => row.id), ["hanging", "positional"]);
+  assert.equal(tied.focus, null);
+});
+
+test("the easy share counts mistakes where at least 70% find a sound move and skips unknown estimates", () => {
+  const games = [0, 1, 2, 3, 4].map((i) => game(i));
+  games[0].mistakes = [80, 70, 69.9, null].map((findChance) => mistake("hanging", { findChance }));
+  assert.deepEqual(weaknessReport(games).easy, { easy: 2, rated: 3, unrated: 1 });
+});
+
+test("phase and overall accuracy are weighted by the user's moves", () => {
+  const games = [
+    game(0, {
+      accuracy: 60, phaseMoves: { opening: 10, middlegame: 10, endgame: 0 },
+      phaseAccuracy: { opening: 90, middlegame: 70, endgame: null },
+    }),
+    ...[1, 2, 3, 4].map((i) => game(i)),
+  ];
+  const { phases, overall } = weaknessReport(games);
+  assert.equal(phases.opening.games, 5);
+  close(phases.opening.accuracy, 90);
+  close(phases.middlegame.accuracy, 78);
+  assert.equal(phases.endgame.games, 4);
+  close(phases.endgame.accuracy, 70);
+  close(overall, 76);
+});
+
+test("low-clock rates use only games with clocks", () => {
+  const games = [
+    game(0, {
+      clock: { lowDecisions: 4, otherDecisions: 16 },
+      mistakes: [mistake("hanging", { lowClock: true }), mistake("hanging", { lowClock: true }),
+        mistake("hanging", { lowClock: false })],
+    }),
+    game(1, { clock: { lowDecisions: 2, otherDecisions: 18 }, mistakes: [mistake("hanging", { lowClock: false })] }),
+    game(2, { mistakes: [mistake("hanging")] }),
+    game(3),
+    game(4),
+  ];
+  const { clock } = weaknessReport(games);
+  assert.equal(clock.games, 2);
+  assert.equal(clock.lowMoves, 6);
+  assert.equal(clock.otherMoves, 34);
+  assert.equal(clock.lowMistakes, 2);
+  assert.equal(clock.otherMistakes, 2);
+  close(clock.lowRate, 200 / 6);
+  close(clock.otherRate, 200 / 34);
+  assert.equal(weaknessReport([0, 1, 2, 3, 4].map((i) => game(i))).clock, null);
+});
+
+test("unconverted wins need an expected score of 85 or more and a known result", () => {
+  const games = [
+    game(0, { maxExpectedScore: 85, result: 0.5 }),
+    game(1, { maxExpectedScore: 84.9, result: 0 }),
+    game(2, { maxExpectedScore: 95, result: 1 }),
+    game(3, { maxExpectedScore: 90, result: null }),
+    game(4, { maxExpectedScore: 99, result: 0 }),
+  ];
+  const { conversion } = weaknessReport(games);
+  assert.equal(conversion.winning, 3);
+  assert.equal(conversion.unconverted, 2);
+  assert.deepEqual(conversion.gameKeys.sort(), ["g0", "g4"]);
+});
+
+test("report filters select the matching puzzles", () => {
+  const p = { gameKey: "g4", theme: "hanging", phase: "endgame", lowClock: true, findChance: 70 };
+  assert.equal(reportFilter("theme", "hanging")(p), true);
+  assert.equal(reportFilter("theme", "positional")(p), false);
+  assert.equal(reportFilter("phase", "endgame")(p), true);
+  assert.equal(reportFilter("lowClock")(p), true);
+  assert.equal(reportFilter("lowClock")({ ...p, lowClock: null }), false);
+  assert.equal(reportFilter("easy")(p), true);
+  assert.equal(reportFilter("easy")({ ...p, findChance: null }), false);
+  assert.equal(reportFilter("unconverted", ["g4"])(p), true);
+  assert.equal(reportFilter("unconverted", ["g1"])(p), false);
+  assert.throws(() => reportFilter("rating"), /Unknown report filter/);
 });
