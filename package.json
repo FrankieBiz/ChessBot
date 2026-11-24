@@ -1,6 +1,16 @@
 {
   "name": "chessbot-local-game-review",
   "version": "3.4.0",
+  "description": "Private, offline chess game review with full-strength Stockfish 19 in the browser",
+  "license": "GPL-3.0-or-later",
+  "homepage": "https://github.com/FrankieBiz/ChessBot#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/FrankieBiz/ChessBot.git"
+  },
+  "bugs": {
+    "url": "https://github.com/FrankieBiz/ChessBot/issues"
+  },
   "private": true,
   "type": "module",
   "scripts": {
@@ -12,5 +22,8 @@
     "chess.js": "1.4.0",
     "cm-chessboard": "8.15.8",
     "stockfish": "19.0.1"
+  },
+  "engines": {
+    "node": ">=24"
   }
 }

@@ -1,0 +1,52 @@
+name: Bug report
+description: Something in ChessBot doesn't work as expected
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for the report. A PGN or game link that reproduces the problem helps the most.
+  - type: input
+    id: version
+    attributes:
+      label: ChessBot version
+      description: Shown on the extensions page of your browser.
+      placeholder: "3.4.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: browser
+    attributes:
+      label: Browser
+      options:
+        - Chrome
+        - Firefox
+        - Other Chromium browser
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you see, and what did you expect instead?
+    validations:
+      required: true
+  - type: textarea
+    id: game
+    attributes:
+      label: Game
+      description: Paste the PGN or a link to the finished Chess.com game, and the move number where it happens.
+      render: text
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Load the PGN
+        2. Go to move 16
+        3. ...
+  - type: textarea
+    id: console
+    attributes:
+      label: Console errors
+      description: Optional. Right-click the review page, choose Inspect, and copy any errors from the Console tab.
+      render: text

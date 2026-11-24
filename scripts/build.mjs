@@ -29,6 +29,7 @@ if (process.argv[2] === "--test") {
       copyChess(vendor),
       cp(at("node_modules", "cm-chessboard", "src"), join(vendor, "cm-chessboard", "src"), { recursive: true }),
       cp(at("node_modules", "cm-chessboard", "assets"), join(vendor, "cm-chessboard", "assets"), { recursive: true }),
+      cp(at("LICENSE"), join(stage, "LICENSE")),
       cp(at("node_modules", "chess.js", "LICENSE"), join(vendor, "chess.js", "LICENSE")),
       cp(at("node_modules", "cm-chessboard", "LICENSE"), join(vendor, "cm-chessboard", "LICENSE")),
       cp(at("node_modules", "stockfish", "Copying.txt"), join(engineDir, "COPYING.txt")),
