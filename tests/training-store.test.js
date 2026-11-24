@@ -213,3 +213,13 @@ test("saveReview still resolves when the best-effort prune fails (the full scan 
   await saveReview(area, { game: gameRecord("g1", 1), puzzles: [savedPuzzle("g1:5", "g1")] });
   assert.equal("training:game:g1" in area.data, true);
 });
+
+test("saving a practiced puzzle keeps a newer re-review's analysis", async () => {
+  const area = new MemoryArea();
+  await saveReview(area, { game: gameRecord("g1", 1), puzzles: [{ ...savedPuzzle("g1:5", "g1"), grade: "blunder" }] });
+  const schedule = { step: 1, due: "2026-11-28", mastered: false };
+  assert.equal(await savePuzzle(area, { ...savedPuzzle("g1:5", "g1"), grade: "mistake", schedule }), true);
+  const stored = (await loadTraining(area)).puzzles.get("g1:5");
+  assert.equal(stored.grade, "blunder");
+  assert.deepEqual(stored.schedule, schedule);
+});

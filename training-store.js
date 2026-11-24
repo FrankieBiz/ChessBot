@@ -62,15 +62,15 @@ export async function saveReview(area, { game, puzzles, removedIds = [] }) {
 }
 
 /**
- * Save one puzzle. Throws TrainingVersionError if newer data is stored. Returns false without writing when
- * the puzzle's key no longer exists (a re-review removed it), otherwise writes it and returns true.
+ * Save one puzzle's schedule (a newer re-review's analysis is kept). Throws TrainingVersionError if newer data is stored. Returns false without writing when
+ * the puzzle's key no longer exists (a re-review removed it), otherwise writes the schedule and returns true.
  */
 export async function savePuzzle(area, puzzle) {
   const key = puzzleStorageKey(puzzle.id);
   const stored = await area.get([VERSION_KEY, key]);
   if (!isWritableVersion(stored[VERSION_KEY])) throw new TrainingVersionError();
   if (!(key in stored)) return false;
-  await area.set({ [key]: puzzle });
+  await area.set({ [key]: { ...stored[key], schedule: puzzle.schedule } });
   return true;
 }
 

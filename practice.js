@@ -66,6 +66,7 @@ const state = {
   epoch: 0,
   solvedFirstTry: 0,
   skipped: 0,
+  unverifiedAttempt: false,
   lineTimer: null,
 };
 
@@ -154,7 +155,7 @@ function loadCurrentPuzzle() {
     loadCurrentPuzzle();
     return;
   }
-  Object.assign(state, { puzzle, game, outcome: null, finished: false, checking: false });
+  Object.assign(state, { puzzle, game, outcome: null, finished: false, checking: false, unverifiedAttempt: false });
 
   board.setOrientation(userColor(puzzle), false);
   board.setPosition(puzzle.fen, false);
@@ -178,6 +179,7 @@ function loadCurrentPuzzle() {
   dom.hintBtn.classList.remove("hidden");
   dom.revealBtn.classList.remove("hidden");
   for (const element of [dom.showLineBtn, dom.openGameLink, dom.nextBtn, dom.done]) element.classList.add("hidden");
+  readyEngine();
 }
 
 function handleBoardInput(event) {
@@ -224,10 +226,11 @@ async function judgeAttempt(san, uci, deliversMate, epoch) {
   const attempt = { attemptUci: uci, gameUci: puzzle.gameMove.uci, review, color: puzzle.color, deliversMate };
   let judgement = judgeDrillAttempt(attempt);
   if (judgement.verdict === "unknown") {
-    setPrompt(`Checking ${san} with Stockfish…`);
+    // Moves in the saved lines are compared without a search, so they never wait for Stockfish.
+    const stored = puzzle.root.lines.some((line) => line.pv[0] === uci);
+    if (!stored) setPrompt(`Checking ${san} with Stockfish…`);
     try {
-      // Moves in the saved lines are compared without a search, so this works even without Stockfish.
-      const comparison = await compareRootMoves(await readyEngine(), puzzlePosition(puzzle), uci, puzzle.depth, puzzle.root);
+      const comparison = await compareRootMoves(stored ? null : await readyEngine(), puzzlePosition(puzzle), uci, puzzle.depth, puzzle.root);
       judgement = judgeDrillAttempt({ ...attempt, comparison });
     } catch {
       // Still unknown: Stockfish is unavailable or the comparison didn't finish.
@@ -242,6 +245,7 @@ async function judgeAttempt(san, uci, deliversMate, epoch) {
     return;
   }
   if (judgement.verdict === "unknown") {
+    state.unverifiedAttempt = true;
     setPrompt(`Couldn't check ${san} with Stockfish. Try another move, or use Show Answer.`, "error");
   } else {
     recordOutcome(OUTCOMES.fail);
@@ -287,16 +291,20 @@ function finishSession() {
   state.puzzle = null;
   board.disableMoveInput();
   board.removeArrows();
+  board.removeMarkers(MARKER_TYPE.square);
+  board.removeMarkers(MARKER_TYPE.circle);
   dom.controls.classList.add("hidden");
   dom.puzzlePrompt.classList.add("hidden");
   dom.puzzleContext.textContent = "";
   dom.sessionCounter.textContent = "";
-  dom.backToDailyBtn.classList.toggle("hidden", state.mode === "daily");
   dom.done.classList.remove("hidden");
 
   const puzzles = allPuzzles();
   const due = dueCount(puzzles, today);
   const upcoming = puzzles.map((p) => p.schedule.due).filter((date) => date && date > today).sort()[0];
+  const more = state.mode === "daily" && due > 0 ? buildSession(allPuzzles(), { today, cap: dailyCap() }).length : 0;
+  dom.backToDailyBtn.textContent = more > 0 ? `Keep going (${more})` : "Back to today's puzzles";
+  dom.backToDailyBtn.classList.toggle("hidden", state.mode === "daily" && more === 0);
   const later = upcoming ? ` Your next puzzles are due on ${upcoming}.` : "";
   const attempted = state.queue.firstPass - state.skipped;
   let title;
@@ -304,9 +312,13 @@ function finishSession() {
   if (!puzzles.length) {
     title = "No puzzles yet";
     text = "Review a game, and your Mistakes, Misses, and Blunders come back here as puzzles the next day.";
+  } else if (state.skipped > 0 && attempted === 0) {
+    title = "Couldn't load these puzzles";
+    text = "Their saved positions couldn't be rebuilt. Reviewing the game again rebuilds them.";
   } else if (attempted > 0) {
     title = state.mode === "daily" ? "Done for today" : "Practice complete";
-    text = `You solved ${state.solvedFirstTry} of ${attempted} on the first try.${state.mode === "daily" ? later : ""}`;
+    text = `You solved ${state.solvedFirstTry} of ${attempted} on the first try.`;
+    if (state.mode === "daily") text += more > 0 ? ` ${plural(more, "more puzzle")} ${more === 1 ? "is" : "are"} due.` : later;
   } else if (state.mode === "theme") {
     title = "Nothing to practice";
     text = "Every puzzle of this kind is mastered.";
@@ -337,7 +349,7 @@ dom.hintBtn.addEventListener("click", () => {
 
 dom.revealBtn.addEventListener("click", () => {
   if (!state.puzzle || state.finished) return;
-  recordOutcome(OUTCOMES.fail);
+  recordOutcome(state.unverifiedAttempt && !state.outcome ? OUTCOMES.unverified : OUTCOMES.fail);
   state.epoch++;
   state.checking = false;
   const best = parseUciMove(state.puzzle.best.uci);
@@ -389,8 +401,9 @@ dom.tabReport.addEventListener("click", () => {
 });
 
 dom.capInput.addEventListener("change", () => {
-  const value = Math.round(Number(dom.capInput.value));
-  const cap = Number.isFinite(value) ? Math.min(MAX_DAILY_CAP, Math.max(1, value)) : DEFAULT_DAILY_CAP;
+  const raw = dom.capInput.value.trim();
+  const value = Math.round(Number(raw));
+  const cap = raw !== "" && Number.isFinite(value) && value >= 1 ? Math.min(MAX_DAILY_CAP, value) : dailyCap();
   dom.capInput.value = String(cap);
   state.data.settings = { ...state.data.settings, dailyCap: cap };
   if (state.data.writable) saveSettings(area, state.data.settings).catch(() => showNotice("Couldn't save the daily limit."));
@@ -436,57 +449,61 @@ function reportSection(title, ...children) {
 }
 
 function renderReport() {
-  const report = weaknessReport([...state.data.games.values()]);
-  if (!report.ready) {
-    dom.reportBody.replaceChildren(element("p", "report-empty",
-      `The report appears after ${report.needed} reviewed games. You've reviewed ${report.games} so far.`));
-    return;
+  try {
+    const report = weaknessReport([...state.data.games.values()]);
+    if (!report.ready) {
+      dom.reportBody.replaceChildren(element("p", "report-empty",
+        `The report appears after ${report.needed} reviewed games. You've reviewed ${report.games} so far.`));
+      return;
+    }
+    const parts = [element("p", "report-summary", `Based on ${report.games} games and ${report.moves} of your moves.`)];
+
+    const { common, lessCommon, focus } = report.themes;
+    const themeRows = common.map((row) => reportRow(row.label,
+      `${row.count} times in ${plural(row.games, "game")} · ${rate(row.per100)} per 100 moves`,
+      practiceButton(reportFilter("theme", row.id), row.label), row.id === focus));
+    parts.push(reportSection("Mistakes by type", ...(themeRows.length
+      ? themeRows
+      : [element("p", "report-empty", "No mistake type has come up 3 or more times yet.")])));
+    if (lessCommon.length) {
+      parts.push(reportSection("Less common", ...lessCommon.map((row) => reportRow(row.label,
+        plural(row.count, "time"), practiceButton(reportFilter("theme", row.id), row.label)))));
+    }
+
+    const { easy, rated, unrated } = report.easy;
+    const easyMeta = rated
+      ? `${easy} of ${rated} mistakes came where at least ${EASY_FIND_CHANCE}% of players find a sound move.` +
+        (unrated ? ` ${unrated} more had no estimate.` : "")
+      : "No estimate is available for these mistakes yet.";
+    parts.push(reportSection("Easy or hard",
+      reportRow("Mistakes in easy positions", easyMeta, practiceButton(reportFilter("easy"), "Easy positions"))));
+
+    parts.push(reportSection("Game phase", ...PHASES.map((phase) => {
+      const { games, accuracy } = report.phases[phase];
+      const meta = games
+        ? `${percent(accuracy)} vs ${percent(report.overall)} overall · ${plural(games, "game")} reached it`
+        : "Not reached yet";
+      return reportRow(PHASE_LABELS[phase], meta, practiceButton(reportFilter("phase", phase), PHASE_LABELS[phase]));
+    })));
+
+    const { clock } = report;
+    parts.push(reportSection("Low on time", clock
+      ? reportRow("Mistakes per 100 moves",
+        `${rate(clock.lowRate)} when low on time vs ${rate(clock.otherRate)} otherwise · ` +
+          `${plural(clock.games, "game")} with clocks, ${plural(clock.lowMoves, "low-clock move")}`,
+        practiceButton(reportFilter("lowClock"), "Low on time"))
+      : element("p", "report-empty", "None of these games recorded clock times.")));
+
+    const { conversion } = report;
+    parts.push(reportSection("Converting wins", conversion.winning
+      ? reportRow(`${conversion.unconverted} of ${plural(conversion.winning, "game")}`, "You were winning but drew or lost.",
+        practiceButton(reportFilter("unconverted", conversion.gameKeys), "Unconverted games"))
+      : element("p", "report-empty", "You haven't reached a winning position in these games yet.")));
+
+    dom.reportBody.replaceChildren(...parts);
+  } catch {
+    dom.reportBody.replaceChildren(element("p", "report-empty", "Couldn't build the report from your saved games."));
   }
-  const parts = [element("p", "report-summary", `Based on ${report.games} games and ${report.moves} of your moves.`)];
-
-  const { common, lessCommon, focus } = report.themes;
-  const themeRows = common.map((row) => reportRow(row.label,
-    `${row.count} times in ${plural(row.games, "game")} · ${rate(row.per100)} per 100 moves`,
-    practiceButton(reportFilter("theme", row.id), row.label), row.id === focus));
-  parts.push(reportSection("Mistakes by type", ...(themeRows.length
-    ? themeRows
-    : [element("p", "report-empty", "No mistake type has come up 3 or more times yet.")])));
-  if (lessCommon.length) {
-    parts.push(reportSection("Less common", ...lessCommon.map((row) => reportRow(row.label,
-      plural(row.count, "time"), practiceButton(reportFilter("theme", row.id), row.label)))));
-  }
-
-  const { easy, rated, unrated } = report.easy;
-  const easyMeta = rated
-    ? `${easy} of ${rated} mistakes came where at least ${EASY_FIND_CHANCE}% of players find a sound move.` +
-      (unrated ? ` ${unrated} more had no estimate.` : "")
-    : "No estimate is available for these mistakes yet.";
-  parts.push(reportSection("Easy or hard",
-    reportRow("Mistakes in easy positions", easyMeta, practiceButton(reportFilter("easy"), "Easy positions"))));
-
-  parts.push(reportSection("Game phase", ...PHASES.map((phase) => {
-    const { games, accuracy } = report.phases[phase];
-    const meta = games
-      ? `${percent(accuracy)} vs ${percent(report.overall)} overall · ${plural(games, "game")} reached it`
-      : "Not reached yet";
-    return reportRow(PHASE_LABELS[phase], meta, practiceButton(reportFilter("phase", phase), PHASE_LABELS[phase]));
-  })));
-
-  const { clock } = report;
-  parts.push(reportSection("Low on time", clock
-    ? reportRow("Mistakes per 100 moves",
-      `${rate(clock.lowRate)} when low on time vs ${rate(clock.otherRate)} otherwise · ` +
-        `${plural(clock.games, "game")} with clocks, ${plural(clock.lowMoves, "low-clock move")}`,
-      practiceButton(reportFilter("lowClock"), "Low on time"))
-    : element("p", "report-empty", "None of these games recorded clock times.")));
-
-  const { conversion } = report;
-  parts.push(reportSection("Converting wins", conversion.winning
-    ? reportRow(`${conversion.unconverted} of ${plural(conversion.winning, "game")}`, "You were winning but drew or lost.",
-      practiceButton(reportFilter("unconverted", conversion.gameKeys), "Unconverted games"))
-    : element("p", "report-empty", "You haven't reached a winning position in these games yet.")));
-
-  dom.reportBody.replaceChildren(...parts);
 }
 
 async function applySavedBoardTheme() {
@@ -513,9 +530,8 @@ async function init() {
   }
   dom.capInput.value = String(dailyCap());
   updateCounts();
-  renderReport();
   startSession();
-  readyEngine();
+  renderReport();
 }
 
 init();
