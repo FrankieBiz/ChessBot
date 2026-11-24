@@ -70,7 +70,7 @@ When a game is reviewed again, its puzzles are rebuilt from the new review but k
   - Otherwise `step = s + 1` and `due = today + I[s + 1]`.
 - **Fail** (first attempt rejected, or Hint or Show Answer used before the first attempt): `step = 0`, `due = today + 1`, and `lapses` increases by one.
 - **Unverified** (Stockfish could not check a non-best move): no change, and the puzzle stays due.
-- Mastered puzzles never appear in sessions. They still count in the report, and the Practice page can reset one to `step = 0`, due tomorrow.
+- Mastered puzzles never appear in sessions. They still count in the report. A reset control is not built in v3.5.0.
 
 ### Daily session
 
@@ -240,3 +240,5 @@ No new extension permissions.
 - Importing games reviewed before v3.5.0, and background analysis of recent games
 - Analyze-yourself-first mode, threat-check drills, play-out-vs-engine
 - Adaptive scheduling, deck export/import, progress charts, comparisons with other players
+- Resetting a mastered puzzle from the Practice page
+- A cap on how many new puzzles enter the deck each day

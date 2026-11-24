@@ -90,6 +90,7 @@ ChessBot's grading rules and models are tested against deeper searches and held-
 - To review a Chess.com game, the extension reads the game from Chess.com's public API.
 - AI explanations are off until you set up a provider. When you request one, the position and Stockfish lines go to the provider you chose. Your API key is stored in the browser's extension storage and sent only to that provider.
 - The extension asks for access to an AI provider's site the first time you request an explanation from it.
+- On Chess.com, ChessBot reads your signed-in username from the page to tell which side you played. It isn't sent anywhere.
 - Practice puzzles and the weakness report are stored in the browser's extension storage on your computer.
 
 ## Project structure

@@ -10,6 +10,7 @@ All notable changes to ChessBot are recorded here. The format follows [Keep a Ch
 
 - **Practice page** with a spaced review of your own mistakes. Every Mistake, Miss, and Blunder from a reviewed game becomes a puzzle that comes back after 1, 3, 7, 21, and 60 days, mixed across games. A wrong first try, a hint, or Show Answer sends a puzzle back to one day. The daily limit defaults to 20 puzzles.
 - **Weakness report** across your 50 most recently reviewed games: mistakes by type, mistakes in easy positions, accuracy by game phase, mistakes when low on time, and winning positions you didn't convert. Each finding links to matching puzzles.
+- On Chess.com, ChessBot reads your signed-in username from the page to tell which side you played.
 - **Practice** link in the review header, with the number of puzzles due.
 - Only your own games feed the deck: Chess.com games where your signed-in account, or the username in Settings, is one of the players, and pasted PGNs with **Save my mistakes for practice** ticked.
 - Repository documentation: license, contributing guide, security policy, code of conduct, issue and pull request templates.
