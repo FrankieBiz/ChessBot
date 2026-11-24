@@ -62,6 +62,15 @@ export function drillRejection({ attemptSan, judgement, review }) {
   return `Not quite — ${attemptSan} isn't the best move here. Try again or click Hint.`;
 }
 
+/** Feedback for a solved drill. */
+export function drillSuccess({ attemptSan, judgement, review, deliversMate = false }) {
+  if (deliversMate) return `Checkmate! ${attemptSan} ends the game.`;
+  if (judgement.verdict === "best") return `Great find! ${attemptSan} is Stockfish's top move.`;
+  return review.missedMate?.drill
+    ? `Nice! ${attemptSan} also forces mate in ${judgement.mate} (Stockfish's line starts ${review.bestSan}).`
+    : `Nice! ${attemptSan} is also strong (top engine move was ${review.bestSan}).`;
+}
+
 /** Hint text for the current drill, given the best move's origin square. */
 export function drillHint({ review, fromSquare }) {
   const missed = review.missedMate?.drill ? review.missedMate : null;

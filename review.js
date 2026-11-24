@@ -22,7 +22,7 @@ import {
 import { AI_PRESETS, coachEndpoint, coachRequestBody, migrateCoachSettings } from "./coach-api.js";
 import { trainingPriority } from "./practical-model.js";
 import { computeDecisionQuality } from "./decision-quality.js";
-import { drillHint, drillPrompt, drillRejection, judgeDrillAttempt } from "./drills.js";
+import { drillHint, drillPrompt, drillRejection, drillSuccess, judgeDrillAttempt } from "./drills.js";
 import { describeVariation, moveToUci, parseUciMove, replayVariation } from "./variation.js";
 import {
   HUMAN_MOVE_SEARCH_DEPTH, candidateScores, forecastHumanMoves, humanContext, moveFeatureRows,
@@ -1777,13 +1777,7 @@ async function evaluateDrillAttempt(moveObj, attemptedUci, deliversMate) {
 
   if (judgement.verdict === "best" || judgement.verdict === "alternative") {
     playSound("success");
-    let message = `Great find! ${moveObj.san} is Stockfish's top move.`;
-    if (deliversMate) message = `Checkmate! ${moveObj.san} ends the game.`;
-    else if (judgement.verdict === "alternative") {
-      message = review.missedMate?.drill
-        ? `Nice! ${moveObj.san} also forces mate in ${judgement.mate} (Stockfish's line starts ${review.bestSan}).`
-        : `Nice! ${moveObj.san} is also strong (top engine move was ${review.bestSan}).`;
-    }
+    const message = drillSuccess({ attemptSan: moveObj.san, judgement, review, deliversMate });
     markDrillSolved(message, review.bestMoveUci, mistakePly);
     return;
   }
