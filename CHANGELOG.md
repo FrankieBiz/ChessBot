@@ -4,13 +4,20 @@ All notable changes to ChessBot are recorded here. The format follows [Keep a Ch
 
 ## [Unreleased]
 
+## [3.5.0] - 2026-11-24
+
 ### Added
 
+- **Practice page** with a spaced review of your own mistakes. Every Mistake, Miss, and Blunder from a reviewed game becomes a puzzle that comes back after 1, 3, 7, 21, and 60 days, mixed across games. A wrong first try, a hint, or Show Answer sends a puzzle back to one day. The daily limit defaults to 20 puzzles.
+- **Weakness report** across your 50 most recently reviewed games: mistakes by type, mistakes in easy positions, accuracy by game phase, mistakes when low on time, and winning positions you didn't convert. Each finding links to matching puzzles.
+- **Practice** link in the review header, with the number of puzzles due.
+- Only your own games feed the deck: Chess.com games where your signed-in account, or the username in Settings, is one of the players, and pasted PGNs with **Save my mistakes for practice** ticked.
 - Repository documentation: license, contributing guide, security policy, code of conduct, issue and pull request templates.
 - Continuous integration that runs the test suite on Node.js 24 and 26 and builds both browser packages.
 
 ### Changed
 
+- The review page and the Practice page share one board setup and one set of drill messages.
 - The README is now an overview. Scoring details moved to [docs/methodology.md](docs/methodology.md), and benchmark results moved to [docs/benchmarks.md](docs/benchmarks.md).
 - The browser packages include the project license.
 
@@ -33,6 +40,7 @@ All notable changes to ChessBot are recorded here. The format follows [Keep a Ch
 
 This is the first version in this repository. Earlier releases (3.1 and 3.2) were developed before version control. It includes local Stockfish 19 review, move grades, Lichess-style accuracy, Decision Quality, the built-in coach with optional AI explanations, the Mistakes trainer, clock-aware practical impact, and the cohort difficulty model.
 
-[Unreleased]: https://github.com/FrankieBiz/ChessBot/compare/v3.4.0...HEAD
+[Unreleased]: https://github.com/FrankieBiz/ChessBot/compare/v3.5.0...HEAD
+[3.5.0]: https://github.com/FrankieBiz/ChessBot/compare/v3.4.0...v3.5.0
 [3.4.0]: https://github.com/FrankieBiz/ChessBot/compare/v3.3.0...v3.4.0
 [3.3.0]: https://github.com/FrankieBiz/ChessBot/releases/tag/v3.3.0

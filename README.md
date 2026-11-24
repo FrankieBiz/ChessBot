@@ -29,6 +29,8 @@ ChessBot is a browser extension that reviews your finished games the way a coach
 - **Accuracy and Decision Quality.** Lichess-style accuracy, average centipawn loss, and separate opening, middlegame, and endgame scores. Decision Quality adds a score that weighs large mistakes more heavily.
 - **Coaching on every move.** A built-in coach points out hanging pieces, missed tactics, king-safety problems, and missed mates. Optional AI explanations use your own key for OpenAI, DeepSeek, Gemini, or any OpenAI-compatible endpoint.
 - **Practice drills.** The Mistakes tab replays your Mistakes, Misses, and Blunders from the original position. Missed mates come back as drills that only accept a mate at least as fast.
+- **Spaced practice from your own games.** Every Mistake, Miss, and Blunder you make is saved as a puzzle on the Practice page and comes back after 1, 3, 7, 21, and 60 days, mixed across games. Testing yourself on a spaced schedule is one of the two study methods with the strongest research support.
+- **Weakness report.** Across your reviewed games, see which kinds of mistakes you make most, how many come in easy positions, how each game phase goes, what happens when you're low on time, and which won games slipped away. Each finding links to matching puzzles.
 - **Human difficulty.** For each decision, ChessBot estimates how often players find a sound move and names the most tempting mistake. The model was trained on public-domain Lichess games.
 - **Practical impact.** A clock-aware model estimates how much a move changed a human player's real chances, not just the engine evaluation.
 - **Free exploration.** Try your own moves on the board, with a full promotion picker. Repetitions and 50-move draws are recognized in your variations.
@@ -67,6 +69,7 @@ The build writes unpacked extensions to `dist/chrome` and `dist/firefox`, plus a
 - **Any PGN:** select the toolbar icon, choose **Load PGN**, paste the game, pick your color, and select **Analyze Game**.
 - **Depth:** choose from 12 (fast) to 20 (maximum). The default of 16 balances speed and accuracy.
 - **Keyboard:** <kbd>←</kbd> <kbd>→</kbd> step through moves, <kbd>Space</kbd> plays the game, <kbd>F</kbd> flips the board, <kbd>R</kbd> retries a drill, and <kbd>Esc</kbd> returns to the main line.
+- **Practice:** select **Practice** in the review header. Puzzles from a game first come due the day after you review it. When you paste a PGN you only want to study, untick **Save my mistakes for practice**.
 
 ## Accuracy you can check
 
@@ -87,6 +90,7 @@ ChessBot's grading rules and models are tested against deeper searches and held-
 - To review a Chess.com game, the extension reads the game from Chess.com's public API.
 - AI explanations are off until you set up a provider. When you request one, the position and Stockfish lines go to the provider you chose. Your API key is stored in the browser's extension storage and sent only to that provider.
 - The extension asks for access to an AI provider's site the first time you request an explanation from it.
+- Practice puzzles and the weakness report are stored in the browser's extension storage on your computer.
 
 ## Project structure
 
@@ -96,6 +100,9 @@ ChessBot's grading rules and models are tested against deeper searches and held-
 | `engine.js`, `analysis.js` | Stockfish worker control, move grading, and adaptive search |
 | `coach.js`, `coach-api.js`, `tactics.js` | Built-in coaching text, optional AI explanations, and missed-mate detection |
 | `drills.js`, `variation.js` | Drill checking and variation replay |
+| `practice.html`, `practice.js`, `practice.css` | The Practice page: daily review, theme practice, and the weakness report |
+| `deck.js`, `weakness.js`, `training-store.js` | Spaced-review schedule, weakness report, and saved practice data |
+| `board-setup.js` | The board and promotion picker shared by both pages |
 | `human-move-model.js`, `difficulty-model.js`, `practical-model.js` | Human difficulty and practical-impact models, with fitted data in the matching `*-data.js` files |
 | `content.js`, `background.js` | The Chess.com page button and game fetching |
 | `browsers/` | Manifests for Chrome and Firefox |
