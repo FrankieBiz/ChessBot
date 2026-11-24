@@ -1,5 +1,8 @@
 // Cross-game weakness report. Pure functions: no storage, clock, or DOM access.
-import { localDate } from "./deck.js";
+import { Chess } from "./vendor/chess.js/chess.js";
+import { computeGameInsights, generateLocalCoachInsight } from "./coach.js";
+import { PUZZLE_GRADES, localDate } from "./deck.js";
+import { computeProGameAccuracy, evalToWinWhite } from "./engine.js";
 
 /** The report appears once this many games are reviewed. */
 export const REPORT_MIN_GAMES = 5;
@@ -53,4 +56,86 @@ export function gameDate({ endTime, headers = {} }, today) {
   if (Number.isFinite(endTime) && endTime > 0) return localDate(new Date(endTime * 1000));
   const tag = [headers.UTCDate, headers.Date].find((value) => /^\d{4}\.\d{2}\.\d{2}$/.test(value ?? ""));
   return tag ? tag.replaceAll(".", "-") : today;
+}
+
+const sideScore = (winWhite, color) => (Number.isFinite(winWhite) ? (color === "w" ? winWhite : 100 - winWhite) : null);
+
+/**
+ * The user's non-forced decisions from a finished review: the position before the move, the review,
+ * the root evaluation, and the fields the deck and the report need.
+ */
+export function userDecisions({ positions, evals, moveReviews, playedColor }) {
+  const clockKey = playedColor === "w" ? "whiteSeconds" : "blackSeconds";
+  const decisions = [];
+  for (let ply = 1; ply < positions.length; ply++) {
+    const before = positions[ply - 1];
+    const after = positions[ply];
+    const review = moveReviews[ply];
+    const root = evals[ply - 1];
+    if (!after.move || after.move.color !== playedColor || !review || review.forced || !root) continue;
+
+    const mistake = PUZZLE_GRADES.has(review.classification.key);
+    const tag = mistake ? generateLocalCoachInsight({
+      ChessClass: Chess,
+      fenBefore: before.fen,
+      fenAfter: after.fen,
+      move: after.move,
+      evalBefore: root,
+      evalAfter: { eval: review.playedEval, bestMove: review.playedPv?.[1] },
+      review,
+    }).tag : null;
+    const context = before.practicalContext;
+    decisions.push({
+      ply,
+      fen: before.fen,
+      searchOptions: before.searchOptions,
+      phase: before.phase,
+      move: { uci: after.move.uci, san: after.move.san },
+      review,
+      root,
+      theme: mistake ? themeForTag(tag) : null,
+      lowClock: isLowClock(context?.[clockKey], context?.timeControl?.base),
+      findChance: Number.isFinite(review.difficulty?.chance) ? review.difficulty.chance : null,
+      expectedBefore: sideScore(root.winWhite, playedColor),
+    });
+  }
+  return decisions;
+}
+
+/** Overall and phase accuracy for the user's side, computed the way the review page shows them. */
+export function gameAccuracy({ positions, evals, moveReviews, playedColor }) {
+  const winTimeline = evals.map((evaluation) => (evaluation ? evalToWinWhite(evaluation.eval) : null));
+  const moves = [];
+  for (let ply = 1; ply < positions.length; ply++) {
+    const review = moveReviews[ply];
+    if (review && !review.forced && positions[ply].move?.color === playedColor) {
+      moves.push({ ply, accuracy: review.accuracy });
+    }
+  }
+  return {
+    accuracy: computeProGameAccuracy(winTimeline, moves),
+    phaseAccuracy: computeGameInsights({ positions, winTimeline, moveReviews, playedColor }),
+  };
+}
+
+/** The stored summary of one reviewed game. */
+export function summarizeGame({ gameKey, reviewedAt, date, color, result, timeClass, opponent, depth, decisions,
+  accuracy, phaseAccuracy }) {
+  const lowDecisions = decisions.filter((d) => d.lowClock === true).length;
+  const otherDecisions = decisions.filter((d) => d.lowClock === false).length;
+  const scores = decisions.map((d) => d.expectedBefore).filter(Number.isFinite);
+  return {
+    gameKey, reviewedAt, date, color, result,
+    timeClass: timeClass || "",
+    opponent: opponent || "",
+    depth,
+    decisions: decisions.length,
+    phaseMoves: Object.fromEntries(PHASES.map((phase) => [phase, decisions.filter((d) => d.phase === phase).length])),
+    phaseAccuracy: Object.fromEntries(PHASES.map((phase) => [phase, phaseAccuracy?.[phase] ?? null])),
+    accuracy: accuracy ?? null,
+    clock: lowDecisions + otherDecisions ? { lowDecisions, otherDecisions } : null,
+    maxExpectedScore: scores.length ? Math.max(...scores) : null,
+    mistakes: decisions.filter((d) => d.theme)
+      .map(({ ply, theme, phase, lowClock, findChance }) => ({ ply, theme, phase, lowClock, findChance })),
+  };
 }
