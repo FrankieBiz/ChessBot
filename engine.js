@@ -173,6 +173,7 @@ export function classifyMove({
   secondScore,
   confirmed = false,
   prevOpponentWinLoss = 0,
+  missedMate = null,
 }) {
   const winLoss = Math.max(0, winBefore - winAfter);
   const isTopEngineMove = Boolean(bestMoveUci && playedUci === bestMoveUci);
@@ -187,6 +188,8 @@ export function classifyMove({
     return classified("great");
   }
 
+  // A missed short mate is a Miss even when the position stays won. Larger losses keep their severity grade.
+  if (missedMate?.drill && winLoss <= GRADE_LOSS_LIMITS.inaccuracy) return classified("miss");
   if ((isTopEngineMove || equivalentBest) && winLoss <= 1.5) return classified("best");
   if (winLoss <= GRADE_LOSS_LIMITS.excellent) return classified("excellent");
   if (winLoss <= GRADE_LOSS_LIMITS.good) return classified("good");

@@ -1,0 +1,192 @@
+{
+  "method": "Run scripts/benchmark-review.mjs with --policy always first. Every decision then records the grade and loss after each pass (depth, depth + 2, depth + 4) and the nodes each pass used. Skipping the third pass does not change the first two, so any rule that decides from the first two passes can be replayed exactly. The first --dev decisions (in benchmark order) were used to choose the rule; the rest are a holdout.",
+  "engine": "656e304f79b38d9122f9806c156b0e5853bc6083c3c5b1ce567c25d3e6b6ebeb",
+  "input": "c5c63967a445e3d0bb8f583f6f5ce11830506d6b257c1db7cb25c3bfde0dc3c1",
+  "referenceDepth": 22,
+  "reviewDepth": 16,
+  "splits": {
+    "development": {
+      "never": {
+        "decisions": 72,
+        "exactGradeMatches": 54,
+        "severeGradeMatches": 71,
+        "meanAbsoluteWinLossError": 0.7604166666666673,
+        "meanNodes": 960514.7777777778,
+        "p90Nodes": 2079114,
+        "broadPasses": 0
+      },
+      "unstable (v3.3)": {
+        "decisions": 72,
+        "exactGradeMatches": 57,
+        "severeGradeMatches": 72,
+        "meanAbsoluteWinLossError": 0.7312500000000004,
+        "meanNodes": 1305160.0694444445,
+        "p90Nodes": 3779750,
+        "broadPasses": 8
+      },
+      "grade-change": {
+        "decisions": 72,
+        "exactGradeMatches": 56,
+        "severeGradeMatches": 71,
+        "meanAbsoluteWinLossError": 0.7395833333333338,
+        "meanNodes": 1165400.9444444445,
+        "p90Nodes": 3037232,
+        "broadPasses": 5
+      },
+      "grade-at-risk (v3.4)": {
+        "decisions": 72,
+        "exactGradeMatches": 57,
+        "severeGradeMatches": 72,
+        "meanAbsoluteWinLossError": 0.7000000000000004,
+        "meanNodes": 1205349.388888889,
+        "p90Nodes": 3038862,
+        "broadPasses": 6
+      },
+      "always": {
+        "decisions": 72,
+        "exactGradeMatches": 59,
+        "severeGradeMatches": 72,
+        "meanAbsoluteWinLossError": 0.6673611111111112,
+        "meanNodes": 2084093.513888889,
+        "p90Nodes": 5571117,
+        "broadPasses": 26
+      }
+    },
+    "holdout": {
+      "never": {
+        "decisions": 72,
+        "exactGradeMatches": 60,
+        "severeGradeMatches": 71,
+        "meanAbsoluteWinLossError": 0.6694444444444444,
+        "meanNodes": 984092.2222222222,
+        "p90Nodes": 2269128,
+        "broadPasses": 0
+      },
+      "unstable (v3.3)": {
+        "decisions": 72,
+        "exactGradeMatches": 59,
+        "severeGradeMatches": 70,
+        "meanAbsoluteWinLossError": 0.5319444444444446,
+        "meanNodes": 1341959.5694444445,
+        "p90Nodes": 3525119,
+        "broadPasses": 7
+      },
+      "grade-change": {
+        "decisions": 72,
+        "exactGradeMatches": 59,
+        "severeGradeMatches": 70,
+        "meanAbsoluteWinLossError": 0.5180555555555556,
+        "meanNodes": 1256788.875,
+        "p90Nodes": 3423467,
+        "broadPasses": 5
+      },
+      "grade-at-risk (v3.4)": {
+        "decisions": 72,
+        "exactGradeMatches": 59,
+        "severeGradeMatches": 70,
+        "meanAbsoluteWinLossError": 0.5180555555555556,
+        "meanNodes": 1256788.875,
+        "p90Nodes": 3423467,
+        "broadPasses": 5
+      },
+      "always": {
+        "decisions": 72,
+        "exactGradeMatches": 62,
+        "severeGradeMatches": 70,
+        "meanAbsoluteWinLossError": 0.38958333333333317,
+        "meanNodes": 2262380.625,
+        "p90Nodes": 6253273,
+        "broadPasses": 28
+      }
+    },
+    "all": {
+      "never": {
+        "decisions": 144,
+        "exactGradeMatches": 114,
+        "severeGradeMatches": 142,
+        "meanAbsoluteWinLossError": 0.7149305555555558,
+        "meanNodes": 972303.5,
+        "p90Nodes": 2196725,
+        "broadPasses": 0
+      },
+      "unstable (v3.3)": {
+        "decisions": 144,
+        "exactGradeMatches": 116,
+        "severeGradeMatches": 142,
+        "meanAbsoluteWinLossError": 0.6315972222222225,
+        "meanNodes": 1323559.8194444445,
+        "p90Nodes": 3676903,
+        "broadPasses": 15
+      },
+      "grade-change": {
+        "decisions": 144,
+        "exactGradeMatches": 115,
+        "severeGradeMatches": 141,
+        "meanAbsoluteWinLossError": 0.6288194444444447,
+        "meanNodes": 1211094.9097222222,
+        "p90Nodes": 3038862,
+        "broadPasses": 10
+      },
+      "grade-at-risk (v3.4)": {
+        "decisions": 144,
+        "exactGradeMatches": 116,
+        "severeGradeMatches": 142,
+        "meanAbsoluteWinLossError": 0.609027777777778,
+        "meanNodes": 1231069.1319444445,
+        "p90Nodes": 3423467,
+        "broadPasses": 11
+      },
+      "always": {
+        "decisions": 144,
+        "exactGradeMatches": 121,
+        "severeGradeMatches": 142,
+        "meanAbsoluteWinLossError": 0.5284722222222222,
+        "meanNodes": 2173237.0694444445,
+        "p90Nodes": 6253273,
+        "broadPasses": 54
+      }
+    }
+  },
+  "sample": {
+    "decisions": 144,
+    "development": "first 72 in benchmark order (the v3.3 audit sample)",
+    "holdout": "next 72, unseen while choosing the rule",
+    "sampleHash": "d42ed6088839e213010b36045b76a1d58c46cd36d23e984766f23d051be49110",
+    "inputRecords": 431
+  },
+  "reproduce": "node scripts/benchmark-review.mjs --input review-positions.jsonl --baseline /path/to/unpacked-v3.2.0 --candidate . --cache cache-dir --count 144 --policy always > always.json && python3 scripts/simulate-search-policy.py --report always.json",
+  "confirmedRun": {
+    "note": "A direct v3.4 benchmark run with the default policy, matching the replayed grade-at-risk row.",
+    "sample": "d42ed6088839e213010b36045b76a1d58c46cd36d23e984766f23d051be49110",
+    "v3.2": {
+      "count": 144,
+      "exactGradeMatches": 112,
+      "severeGradeMatches": 142,
+      "falseSevere": 2,
+      "missedSevere": 0,
+      "meanAbsoluteWinLossError": 0.6968750000000004,
+      "meanAbsoluteCpLossError": 13.1875,
+      "meanNodes": 940066.5,
+      "meanSearches": 1.9861111111111112,
+      "searchConfidence": {},
+      "completedAtTargetDepth": 133
+    },
+    "v3.4": {
+      "count": 144,
+      "exactGradeMatches": 116,
+      "severeGradeMatches": 142,
+      "falseSevere": 1,
+      "missedSevere": 1,
+      "meanAbsoluteWinLossError": 0.609027777777778,
+      "meanAbsoluteCpLossError": 12.63888888888889,
+      "meanNodes": 1231069.1319444445,
+      "meanSearches": 2.173611111111111,
+      "searchConfidence": {
+        "single": 88,
+        "stable": 49,
+        "borderline": 7
+      },
+      "completedAtTargetDepth": 133
+    }
+  }
+}

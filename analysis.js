@@ -10,8 +10,30 @@ import {
 } from "./engine.js";
 import { parseClockSeconds, parseTimeControl, practicalImpact } from "./practical-model.js";
 import { estimateDifficulty, readLichessRatings } from "./difficulty-model.js";
+import { detectMissedMate } from "./tactics.js";
 
 const moverScore = (whiteScore, color) => color === "w" ? whiteScore : 100 - whiteScore;
+
+/**
+ * Extra search for one reviewed decision. Depths are added to the review depth.
+ *
+ * broadPass chooses when the third, broader pass runs after the confirming pass:
+ * - "grade-at-risk" (default): the grade changed, Great/Brilliant praise did not hold, or a
+ *   same-grade loss moved by more than PASS_AGREEMENT_LOSS points toward a severity line
+ *   (Inaccuracy/Mistake at 10, Mistake/Blunder at 20) far enough to reach it at the same rate.
+ * - "grade-change": only the first two conditions.
+ * - "unstable": the v3.3 rule, which reran every same-grade loss that moved by more than 2.5 points.
+ * - "never" and "always" exist for the search benchmark.
+ * research/search-policy-2026-11.json has the comparison that chose the default.
+ */
+export const SEARCH_POLICY = {
+  confirmDepth: 2,
+  broadDepth: 4,
+  broadWidth: 3,
+  broadPass: "grade-at-risk",
+};
+const PASS_AGREEMENT_LOSS = 2.5;
+const SEVERITY_LIMITS = [GRADE_LOSS_LIMITS.inaccuracy, GRADE_LOSS_LIMITS.mistake];
 
 export function terminalPosition(game, last = false, result) {
   const mate = game.isCheckmate();
@@ -159,6 +181,7 @@ function gradeInputs(before, after, { root, played }) {
       secondScore: Number.isFinite(root.secondWinWhite) ? moverScore(root.secondWinWhite, move.color) : null,
       equivalentBest: root.eval.type === playedEval.eval.type && root.eval.value === playedEval.eval.value,
       isSacrifice: !forced && sacrificeInLine(before, after, played),
+      missedMate: forced ? null : detectMissedMate(root.eval, playedEval.eval, move.color),
     },
   };
 }
@@ -169,7 +192,26 @@ function signal(before, after, comparison, prevOpponentWinLoss) {
 }
 
 function agreesAtDepth(previous, current) {
-  return previous.key === current.key && Math.abs(previous.winLoss - current.winLoss) <= 2.5;
+  return previous.key === current.key && Math.abs(previous.winLoss - current.winLoss) <= PASS_AGREEMENT_LOSS;
+}
+
+const isPraise = ({ key }) => key === "brilliant" || key === "great";
+const describePass = ({ root, played }, { key, winLoss }) => ({
+  depth: Math.min(root.depth, played.depth), key, winLoss,
+});
+
+export function needsBroaderSearch(previous, current, mode = SEARCH_POLICY.broadPass) {
+  if (mode === "never") return false;
+  if (mode === "always") return true;
+  if (mode === "unstable") return !agreesAtDepth(previous, current);
+  if (previous.key !== current.key) return true;
+  if (isPraise(previous) || isPraise(current)) return !agreesAtDepth(previous, current);
+  if (mode === "grade-change") return false;
+  // Same grade, but the loss is moving fast enough to cross a severity line at the next depth.
+  const shift = current.winLoss - previous.winLoss;
+  if (Math.abs(shift) <= PASS_AGREEMENT_LOSS) return false;
+  const [low, high] = [current.winLoss, current.winLoss + shift].sort((a, b) => a - b);
+  return SEVERITY_LIMITS.some((limit) => low <= limit && limit <= high);
 }
 
 async function refineDecision(engine, before, after, depth, width, fallback) {
@@ -183,36 +225,43 @@ async function refineDecision(engine, before, after, depth, width, fallback) {
   }
 }
 
-export async function analyzeDecision(engine, before, after, depth, initialRoot, prevOpponentWinLoss = 0) {
+export async function analyzeDecision(engine, before, after, depth, initialRoot, prevOpponentWinLoss = 0,
+  policy = SEARCH_POLICY) {
   const root = initialRoot ?? await analyzeGamePosition(engine, before, depth);
   const baseline = await compareRootMoves(engine, before, after.move.uci, depth, root);
   if (before.legalMoves < 2) return { ...baseline, searchConfidence: "forced" };
 
   let previous = signal(before, after, baseline, prevOpponentWinLoss);
+  // Each completed pass, for the search-confidence display and the policy benchmark.
+  const passes = [describePass(baseline, previous)];
   const practicalLoss = estimateImpact(before, after, baseline.root, baseline.played)?.loss ?? 0;
   const nearBoundary = Object.values(GRADE_LOSS_LIMITS).some((cutoff) => Math.abs(previous.winLoss - cutoff) <= 1);
   const praise = previous.key === "brilliant" || previous.key === "great";
   if (Math.max(previous.winLoss, practicalLoss) < 5 && baseline.root.pvGap < 10 && !nearBoundary && !praise && !previous.sacrifice) {
-    return { ...baseline, searchConfidence: "single" };
+    return { ...baseline, passes, searchConfidence: "single" };
   }
 
-  let result = await refineDecision(engine, before, after, depth + 2, 2, baseline);
-  if (!result) return { ...baseline, searchConfidence: "borderline" };
+  let result = await refineDecision(engine, before, after, depth + policy.confirmDepth, 2, baseline);
+  if (!result) return { ...baseline, passes, searchConfidence: "borderline" };
 
   let current = signal(before, after, result, prevOpponentWinLoss);
-  if (!agreesAtDepth(previous, current)) {
-    const broader = await refineDecision(engine, before, after, depth + 4, 3, result);
+  passes.push(describePass(result, current));
+  if (needsBroaderSearch(previous, current, policy.broadPass)) {
+    const broader = await refineDecision(engine, before, after, depth + policy.broadDepth, policy.broadWidth, result);
     if (broader) {
       previous = current;
       result = broader;
       current = signal(before, after, result, prevOpponentWinLoss);
+      passes.push(describePass(result, current));
     }
   }
-  const stable = agreesAtDepth(previous, current);
-  const distinction = current.key === "brilliant" || current.key === "great";
+  // Praise needs the loss to hold as well; other grades need only the label to hold.
+  const agrees = agreesAtDepth(previous, current);
+  const stable = policy.broadPass === "unstable" ? agrees : previous.key === current.key;
   return {
     ...result,
-    confirmed: stable && distinction && result.root.lines.length >= 2,
+    passes,
+    confirmed: agrees && isPraise(current) && result.root.lines.length >= 2,
     searchConfidence: stable ? "stable" : "borderline",
   };
 }
@@ -238,6 +287,7 @@ export function scoreDecision(before, after, comparison, prevOpponentWinLoss) {
     bestMoveUci: root.bestMove,
     playedPv: played.pv,
     playedEval: playedEval.eval,
+    missedMate: grade.missedMate,
     depth: root.depth,
     searchConfidence,
   };

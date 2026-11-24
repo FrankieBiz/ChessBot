@@ -122,10 +122,30 @@ export function generateLocalCoachInsight({
     const mateIn = Math.abs(afterEvalObj.value);
     const reply = inspectUci(fenAfter, evalAfter?.bestMove);
     const replyHint = reply ? ` starting with ${reply.san}` : "";
+    const ownMate = review.missedMate?.drill
+      ? `You had a forced mate in ${review.missedMate.available} with ${bestSan || "the top engine move"} instead.`
+      : bestSan ? `Compare that with the engine line after ${bestSan}.` : "";
     return {
       title: `${move.san} allows checkmate in ${mateIn}`,
-      text: `This leaves your king vulnerable—${oppLabel} can now force checkmate in ${mateIn}${replyHint}. ${bestSan ? `Compare that with the engine line after ${bestSan}.` : ""}`,
-      tag: "Missed Defense",
+      text: `This leaves your king vulnerable—${oppLabel} can now force checkmate in ${mateIn}${replyHint}. ${ownMate}`,
+      tag: review.missedMate?.drill ? "Missed Mate" : "Missed Defense",
+    };
+  }
+
+  const missedMate = review.missedMate;
+  if (missedMate) {
+    const best = bestSan || "the top engine move";
+    const { available, played, kind } = missedMate;
+    const outcome = played
+      ? `${move.san} still forces mate, but it takes ${played} moves instead of ${available}`
+      : `After ${move.san}, Stockfish no longer finds a forced mate`;
+    const lesson = kind === "immediate"
+      ? `${best} was checkmate on the spot. ${outcome}. Before any other move, check every check, capture, and threat for an immediate mate.`
+      : `${best} started a forced checkmate in ${available}. ${outcome}. Calculating forcing moves first would have finished the game.`;
+    return {
+      title: kind === "immediate" ? `${move.san} missed mate in 1` : `${move.san} missed a forced mate in ${available}`,
+      text: kind === "slower" ? `${best} forced mate in ${available}. ${outcome}, so the win is still there.` : lesson,
+      tag: "Missed Mate",
     };
   }
 

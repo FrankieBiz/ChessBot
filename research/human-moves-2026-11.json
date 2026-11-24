@@ -1,0 +1,575 @@
+{
+  "target": "Played move loses at most five expected-score points in the extension's depth-16 comparison",
+  "searchDepth": 14,
+  "features": [
+    "loss",
+    "sqrtLoss",
+    "best",
+    "lossRating",
+    "sqrtLossRating",
+    "lossClock",
+    "capture",
+    "capturedValue",
+    "recapture",
+    "check",
+    "queenPromotion",
+    "underpromotion",
+    "castle",
+    "knight",
+    "bishop",
+    "rook",
+    "queen",
+    "king",
+    "escapesAttack",
+    "enPrise",
+    "retreat",
+    "distance",
+    "pawnPush",
+    "captureRating",
+    "checkRating"
+  ],
+  "l2": {
+    "engineOnly": 0.001,
+    "unrated": 0.0001,
+    "rated": 0.0001
+  },
+  "samples": {
+    "train": "44f5173fecf71105a6d2ae0b271a8d693d10fe1bc962155f55007dfea5fbd192",
+    "validation": "385039bb9bf3fe7fe0d63bab3c43d263e9fa868b975d72d69cb056517b198e64",
+    "test": "ff80a745baedf360378eaf3854d7728bfd91fbef6390520726991dc24ea48706",
+    "chesscom": "3172793e3c1be609662a45694476fa4afb9fa7c08f4bfe45aed9ab9652940433"
+  },
+  "moves": {
+    "train": {
+      "engineOnly": {
+        "decisions": 5000,
+        "moveLogLoss": 2.6849987231430226,
+        "top1": 0.254380271016016,
+        "top3": 0.4639426801608933,
+        "temptingMistake": {
+          "decisions": 1104,
+          "modelTop": 0.19200760442061346,
+          "smallestEngineLoss": 0.19200760442061346,
+          "uniform": 0.037491547693875645
+        }
+      },
+      "unrated": {
+        "decisions": 5000,
+        "moveLogLoss": 2.3122755640981296,
+        "top1": 0.35256190476190474,
+        "top3": 0.5880990476190475,
+        "temptingMistake": {
+          "decisions": 1104,
+          "modelTop": 0.24728260869565216,
+          "smallestEngineLoss": 0.19200760442061346,
+          "uniform": 0.037491547693875645
+        }
+      },
+      "rated": {
+        "decisions": 5000,
+        "moveLogLoss": 2.3066488440945636,
+        "top1": 0.35741190476190476,
+        "top3": 0.5900157142857143,
+        "temptingMistake": {
+          "decisions": 1104,
+          "modelTop": 0.24864130434782608,
+          "smallestEngineLoss": 0.19200760442061346,
+          "uniform": 0.037491547693875645
+        }
+      }
+    },
+    "validation": {
+      "engineOnly": {
+        "decisions": 1200,
+        "moveLogLoss": 2.6092410317387063,
+        "top1": 0.27632205109102753,
+        "top3": 0.4767654791642274,
+        "temptingMistake": {
+          "decisions": 245,
+          "modelTop": 0.21098448691367735,
+          "smallestEngineLoss": 0.21098448691367735,
+          "uniform": 0.03677936129262653
+        }
+      },
+      "unrated": {
+        "decisions": 1200,
+        "moveLogLoss": 2.298385773227667,
+        "top1": 0.3591527777777777,
+        "top3": 0.5964186507936508,
+        "temptingMistake": {
+          "decisions": 245,
+          "modelTop": 0.25918367346938775,
+          "smallestEngineLoss": 0.21098448691367735,
+          "uniform": 0.03677936129262653
+        }
+      },
+      "rated": {
+        "decisions": 1200,
+        "moveLogLoss": 2.2919122363670135,
+        "top1": 0.3635694444444444,
+        "top3": 0.5973769841269841,
+        "temptingMistake": {
+          "decisions": 245,
+          "modelTop": 0.2510204081632653,
+          "smallestEngineLoss": 0.21098448691367735,
+          "uniform": 0.03677936129262653
+        }
+      }
+    },
+    "test": {
+      "engineOnly": {
+        "decisions": 2500,
+        "moveLogLoss": 2.6546135954571195,
+        "top1": 0.26344308183712123,
+        "top3": 0.47921966087886303,
+        "temptingMistake": {
+          "decisions": 562,
+          "modelTop": 0.22751562109284215,
+          "smallestEngineLoss": 0.22751562109284215,
+          "uniform": 0.0418500423271268
+        }
+      },
+      "unrated": {
+        "decisions": 2500,
+        "moveLogLoss": 2.317704786565125,
+        "top1": 0.3433266666666668,
+        "top3": 0.5843676190476191,
+        "temptingMistake": {
+          "decisions": 562,
+          "modelTop": 0.2749110320284697,
+          "smallestEngineLoss": 0.22751562109284215,
+          "uniform": 0.0418500423271268
+        }
+      },
+      "rated": {
+        "decisions": 2500,
+        "moveLogLoss": 2.3102739011265583,
+        "top1": 0.34474000000000016,
+        "top3": 0.5834076190476193,
+        "temptingMistake": {
+          "decisions": 562,
+          "modelTop": 0.26512455516014233,
+          "smallestEngineLoss": 0.22751562109284215,
+          "uniform": 0.0418500423271268
+        }
+      }
+    },
+    "chesscom": {
+      "engineOnly": {
+        "decisions": 1431,
+        "moveLogLoss": 2.7099608055544975,
+        "top1": 0.25205072797007116,
+        "top3": 0.4487863183902689,
+        "temptingMistake": {
+          "decisions": 293,
+          "modelTop": 0.16500814744953465,
+          "smallestEngineLoss": 0.16500814744953465,
+          "uniform": 0.03630133978503843
+        }
+      },
+      "unrated": {
+        "decisions": 1431,
+        "moveLogLoss": 2.3434838712288935,
+        "top1": 0.36232238527836014,
+        "top3": 0.591474493361286,
+        "temptingMistake": {
+          "decisions": 293,
+          "modelTop": 0.23037542662116042,
+          "smallestEngineLoss": 0.16500814744953465,
+          "uniform": 0.03630133978503843
+        }
+      }
+    }
+  },
+  "findRate": {
+    "validation": {
+      "decisions": 1200,
+      "soundRate": 0.805,
+      "cohortCoverage": 0.9641666666666666,
+      "coveredByCohort": {
+        "decisions": 1157,
+        "shippedCohort": {
+          "brier": 0.1450205935742925,
+          "logLoss": 0.451116361443383
+        },
+        "refitCohort": {
+          "brier": 0.14167397230365766,
+          "logLoss": 0.4222218024651034
+        },
+        "engineOnly": {
+          "brier": 0.13256283958953013,
+          "logLoss": 0.3976063927598319
+        },
+        "engineOnlyVsShipped": {
+          "brierGain": 0.012457753984762366,
+          "approximate95PercentInterval": [
+            0.007203754945298781,
+            0.01771175302422595
+          ]
+        },
+        "engineOnlyVsRefit": {
+          "brierGain": 0.009111132714127512,
+          "approximate95PercentInterval": [
+            0.0036997543059299805,
+            0.014522511122325043
+          ]
+        },
+        "moveLevelUnrated": {
+          "brier": 0.12475080051066431,
+          "logLoss": 0.3788974117049865
+        },
+        "moveLevelUnratedVsShipped": {
+          "brierGain": 0.02026979306362819,
+          "approximate95PercentInterval": [
+            0.013373031031624707,
+            0.027166555095631675
+          ]
+        },
+        "moveLevelUnratedVsRefit": {
+          "brierGain": 0.016923171792993335,
+          "approximate95PercentInterval": [
+            0.009830885551012265,
+            0.024015458034974405
+          ]
+        },
+        "moveLevelUnratedVsEngineOnly": {
+          "brierGain": 0.007812039078865823,
+          "approximate95PercentInterval": [
+            0.00349749813654491,
+            0.012126580021186738
+          ]
+        },
+        "moveLevelRated": {
+          "brier": 0.12335328024890518,
+          "logLoss": 0.37594739059281496
+        },
+        "moveLevelRatedVsShipped": {
+          "brierGain": 0.0216673133253873,
+          "approximate95PercentInterval": [
+            0.014828778093595618,
+            0.028505848557178984
+          ]
+        },
+        "moveLevelRatedVsRefit": {
+          "brierGain": 0.01832069205475245,
+          "approximate95PercentInterval": [
+            0.011027333961437992,
+            0.025614050148066905
+          ]
+        },
+        "moveLevelRatedVsEngineOnly": {
+          "brierGain": 0.009209559340624937,
+          "approximate95PercentInterval": [
+            0.004627202692840642,
+            0.013791915988409231
+          ]
+        }
+      },
+      "engineOnlyAllDecisions": {
+        "brier": 0.12821604373108542,
+        "logLoss": 0.3857523733976963
+      },
+      "moveLevelUnratedAllDecisions": {
+        "brier": 0.12065978319695461,
+        "logLoss": 0.3675454395763196
+      },
+      "moveLevelRatedAllDecisions": {
+        "brier": 0.11933527069955639,
+        "logLoss": 0.36479138816268875
+      }
+    },
+    "test": {
+      "decisions": 2500,
+      "soundRate": 0.784,
+      "cohortCoverage": 0.966,
+      "coveredByCohort": {
+        "decisions": 2415,
+        "shippedCohort": {
+          "brier": 0.15686830916093414,
+          "logLoss": 0.4781027328914594
+        },
+        "refitCohort": {
+          "brier": 0.15312054388463547,
+          "logLoss": 0.45028781176695976
+        },
+        "engineOnly": {
+          "brier": 0.13960512351057863,
+          "logLoss": 0.4105218730145186
+        },
+        "engineOnlyVsShipped": {
+          "brierGain": 0.017263185650355492,
+          "approximate95PercentInterval": [
+            0.013205305581411836,
+            0.021321065719299148
+          ]
+        },
+        "engineOnlyVsRefit": {
+          "brierGain": 0.013515420374056833,
+          "approximate95PercentInterval": [
+            0.00947569494365586,
+            0.017555145804457807
+          ]
+        },
+        "moveLevelUnrated": {
+          "brier": 0.13129209756690285,
+          "logLoss": 0.39188802930702443
+        },
+        "moveLevelUnratedVsShipped": {
+          "brierGain": 0.025576211594031287,
+          "approximate95PercentInterval": [
+            0.020378809788273104,
+            0.03077361339978947
+          ]
+        },
+        "moveLevelUnratedVsRefit": {
+          "brierGain": 0.021828446317732633,
+          "approximate95PercentInterval": [
+            0.016672704432795286,
+            0.02698418820266998
+          ]
+        },
+        "moveLevelUnratedVsEngineOnly": {
+          "brierGain": 0.008313025943675799,
+          "approximate95PercentInterval": [
+            0.005114124716589688,
+            0.01151192717076191
+          ]
+        },
+        "moveLevelRated": {
+          "brier": 0.1305128763388473,
+          "logLoss": 0.38944651573625527
+        },
+        "moveLevelRatedVsShipped": {
+          "brierGain": 0.026355432822086834,
+          "approximate95PercentInterval": [
+            0.021236600367664685,
+            0.031474265276508984
+          ]
+        },
+        "moveLevelRatedVsRefit": {
+          "brierGain": 0.022607667545788176,
+          "approximate95PercentInterval": [
+            0.017310956337815854,
+            0.0279043787537605
+          ]
+        },
+        "moveLevelRatedVsEngineOnly": {
+          "brierGain": 0.009092247171731344,
+          "approximate95PercentInterval": [
+            0.005767486300479392,
+            0.012417008042983296
+          ]
+        }
+      },
+      "engineOnlyAllDecisions": {
+        "brier": 0.13533866817464735,
+        "logLoss": 0.39877095077525937
+      },
+      "moveLevelUnratedAllDecisions": {
+        "brier": 0.12741922209217846,
+        "logLoss": 0.38104572933589587
+      },
+      "moveLevelRatedAllDecisions": {
+        "brier": 0.12663303454266947,
+        "logLoss": 0.37853269428221004
+      }
+    },
+    "chesscom": {
+      "decisions": 1431,
+      "soundRate": 0.8113207547169812,
+      "cohortCoverage": 0.9399021663172606,
+      "coveredByCohort": {
+        "decisions": 1345,
+        "shippedCohort": {
+          "brier": 0.14213547873609306,
+          "logLoss": 0.4422369163729991
+        },
+        "refitCohort": {
+          "brier": 0.13730141654085073,
+          "logLoss": 0.4077210087077936
+        },
+        "engineOnly": {
+          "brier": 0.12676762162667227,
+          "logLoss": 0.37640498424240504
+        },
+        "engineOnlyVsShipped": {
+          "brierGain": 0.015367857109420784,
+          "approximate95PercentInterval": [
+            0.010152933879739775,
+            0.02058278033910179
+          ]
+        },
+        "engineOnlyVsRefit": {
+          "brierGain": 0.010533794914178473,
+          "approximate95PercentInterval": [
+            0.005100245990474795,
+            0.01596734383788215
+          ]
+        },
+        "moveLevelUnrated": {
+          "brier": 0.12464208157917003,
+          "logLoss": 0.3745078368636632
+        },
+        "moveLevelUnratedVsShipped": {
+          "brierGain": 0.017493397156923014,
+          "approximate95PercentInterval": [
+            0.011223729293528585,
+            0.023763065020317442
+          ]
+        },
+        "moveLevelUnratedVsRefit": {
+          "brierGain": 0.012659334961680705,
+          "approximate95PercentInterval": [
+            0.006186224800886585,
+            0.019132445122474827
+          ]
+        },
+        "moveLevelUnratedVsEngineOnly": {
+          "brierGain": 0.0021255400475022313,
+          "approximate95PercentInterval": [
+            -0.0020092297765198276,
+            0.006260309871524291
+          ]
+        }
+      },
+      "engineOnlyAllDecisions": {
+        "brier": 0.12121764854528679,
+        "logLoss": 0.3614014552156349
+      },
+      "moveLevelUnratedAllDecisions": {
+        "brier": 0.11919662464241551,
+        "logLoss": 0.35966097527855134
+      }
+    }
+  },
+  "weights": {
+    "engineOnly": [
+      -0.020137708920133484,
+      -1.3272446315960191,
+      0.4531684046348691,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "unrated": [
+      0.0694210985086876,
+      -1.2758579763320925,
+      0.1939646236095167,
+      0.0,
+      0.0,
+      0.03976481411342169,
+      1.3460084935757017,
+      2.7647058959316104,
+      1.0406642414244514,
+      1.1757673892089233,
+      1.9112606421780671,
+      -0.6320353909360005,
+      1.240376743682101,
+      -0.46443425875204797,
+      -0.38112281194715636,
+      -1.0936937132429145,
+      -0.9409971180555782,
+      -1.2118006400333705,
+      1.0227159915279456,
+      -2.1277923408746853,
+      -0.658410561912722,
+      -0.21923815206823694,
+      -0.7232738426441586,
+      0.0,
+      0.0
+    ],
+    "rated": [
+      0.03097599250954843,
+      -1.118788710676912,
+      0.20525176905628237,
+      0.0483015095907318,
+      -0.3896987633699569,
+      0.05142864224147867,
+      1.3831262395492203,
+      2.8072567268470334,
+      1.035812112768629,
+      1.1764577571794657,
+      1.9039383555863383,
+      -0.6272055787735268,
+      1.23504912534808,
+      -0.4743803695704885,
+      -0.39162281085351053,
+      -1.1062090919614722,
+      -0.9498414161912725,
+      -1.2253644282932596,
+      1.026596757704662,
+      -2.140737579121699,
+      -0.6532815738568014,
+      -0.21811484624555322,
+      -0.7354374556364921,
+      -0.1386944926408689,
+      -0.025844360923498302
+    ]
+  },
+  "calibration": {
+    "engineOnly": [
+      0.43811307383411047,
+      0.5175114000533286
+    ],
+    "unrated": [
+      0.4083177487263137,
+      0.5344293057110852
+    ],
+    "rated": [
+      0.40924953317643925,
+      0.5466228538426043
+    ]
+  },
+  "searchConditions": {
+    "note": "Brier scores on decisions covered by the cohort model. 'warm' ran the all-moves search right after the deep comparison of the played move, which leaks that move's deep result through the search table. The shipped model and the extension use 'cold'.",
+    "depth12Warm": {
+      "test": {
+        "engineOnly": 0.1302967172094418,
+        "moveLevelRated": 0.11759954382253998
+      },
+      "chesscom": {
+        "engineOnly": 0.1189445280316664,
+        "moveLevelUnrated": 0.11388280875761479
+      }
+    },
+    "depth12Cold": {
+      "test": {
+        "engineOnly": 0.14110843741536208,
+        "moveLevelRated": 0.1322825359011536
+      },
+      "chesscom": {
+        "engineOnly": 0.12736889943392485,
+        "moveLevelUnrated": 0.12369807718765788
+      }
+    },
+    "depth14Cold": {
+      "test": {
+        "engineOnly": 0.13960512351057863,
+        "moveLevelRated": 0.1305128763388473
+      },
+      "chesscom": {
+        "engineOnly": 0.12676762162667227,
+        "moveLevelUnrated": 0.12464208157917003
+      }
+    }
+  }
+}

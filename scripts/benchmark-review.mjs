@@ -1,4 +1,3 @@
-import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { appendFileSync, createReadStream } from "node:fs";
 import { mkdir, readFile, readdir } from "node:fs/promises";
@@ -6,6 +5,7 @@ import { join, resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
+import { StockfishCliWorker } from "./lib/stockfish-cli.mjs";
 
 const rootDir = fileURLToPath(new URL("../", import.meta.url));
 const defaultEngine = join(rootDir, "node_modules", "stockfish", "bin", "stockfish-19-single.js");
@@ -22,6 +22,7 @@ const { values: args } = parseArgs({ options: {
   workers: { type: "string", default: "4" },
   depth: { type: "string", default: "16" },
   "reference-depth": { type: "string", default: "22" },
+  policy: { type: "string" },
   help: { type: "boolean" },
 } });
 
@@ -29,7 +30,7 @@ if (args.help || !args.input || !args.baseline || !args.cache) {
   console.log(
     "Usage: node scripts/benchmark-review.mjs --input holdout.jsonl --baseline v3.2.0-dir --cache cache-dir\n" +
     "       [--candidate project-dir] [--count 72] [--workers 4] [--depth 16] [--reference-depth 22]\n" +
-    "       [--stockfish node_modules/stockfish/bin/stockfish-19-single.js]\n" +
+    "       [--stockfish node_modules/stockfish/bin/stockfish-19-single.js] [--policy grade-change|unstable|never|always]\n" +
     "Holdout rows are JSON objects with Lichess movetext and a calibration row whose second value is completed plies.\n" +
     "The cache stores per-position results. Add --candidate to compare updated review source against the same reference.",
   );
@@ -71,65 +72,6 @@ async function loadImplementation(directory) {
     import(moduleUrl("analysis.js")), import(moduleUrl("engine.js")),
   ]);
   return { analysis, transport, source };
-}
-
-class StockfishCliWorker {
-  constructor(path) {
-    this.process = spawn(process.execPath, [path], { stdio: ["pipe", "pipe", "pipe"] });
-    this.searches = [];
-    this.reference = false;
-    this.pendingBarrier = null;
-    this.closed = false;
-    let stderr = "";
-    this.process.stderr.on("data", (data) => { stderr = (stderr + data).slice(-4000); });
-    this.process.on("error", (error) => this.fail(error));
-    this.process.stdin.on("error", (error) => this.fail(error));
-    this.process.on("close", (code, signal) => {
-      this.fail(new Error(`Stockfish exited (${code ?? signal})${stderr ? `\n${stderr}` : ""}`));
-    });
-    createInterface({ input: this.process.stdout }).on("line", (data) => {
-      if (data === "readyok") this.pendingBarrier?.resolve();
-      const nodes = data.match(/\bnodes (\d+)/)?.[1];
-      const search = this.searches.at(-1);
-      if (nodes && search) search.nodes = Math.max(search.nodes, Number(nodes));
-      this.onmessage?.({ data });
-    });
-  }
-
-  fail(error) {
-    if (this.closed) return;
-    this.pendingBarrier?.reject(error);
-    this.onerror?.(error);
-  }
-
-  postMessage(command) {
-    if (command.startsWith("go ")) {
-      if (this.reference) command = command.replace(/\s+nodes \d+\b/, "");
-      this.searches.push({ command, nodes: 0 });
-    }
-    this.process.stdin.write(command + "\n");
-  }
-
-  async clearHash() {
-    let timer;
-    try {
-      await new Promise((resolve, reject) => {
-        this.pendingBarrier = { resolve, reject };
-        timer = setTimeout(() => reject(new Error("Stockfish hash reset timed out")), 30_000);
-        this.postMessage("ucinewgame");
-        this.postMessage("isready");
-      });
-    } finally {
-      clearTimeout(timer);
-      this.pendingBarrier = null;
-    }
-  }
-
-  terminate() {
-    this.closed = true;
-    this.pendingBarrier?.reject(new Error("Stockfish terminated"));
-    this.process.kill();
-  }
 }
 
 globalThis.Worker = StockfishCliWorker;
@@ -196,14 +138,15 @@ function asResult(position, comparison, review, searches, start) {
     rootEval: comparison.root.eval,
     playedEval: comparison.played.eval,
     confidence: comparison.searchConfidence ?? review.searchConfidence ?? null,
+    passes: comparison.passes ?? null,
     elapsedMs: performance.now() - start,
     searches,
   };
 }
 
-async function reviewPosition(engine, { before, after }, analysis) {
+async function reviewPosition(engine, { before, after }, analysis, policy) {
   const initialRoot = await analysis.analyzeGamePosition(engine, before, depth);
-  return analysis.analyzeDecision(engine, before, after, depth, initialRoot);
+  return analysis.analyzeDecision(engine, before, after, depth, initialRoot, 0, policy);
 }
 
 async function referencePosition(engine, { before, after }) {
@@ -232,7 +175,11 @@ async function referencePosition(engine, { before, after }) {
 async function collect(label, implementation, positions) {
   const reference = label === "reference";
   const searchDepth = reference ? referenceDepth : depth;
-  const key = hash(JSON.stringify([cacheVersion, engineId, implementation.source, searchDepth, reference, workers]));
+  // Policy overrides apply only to the candidate. The key is unchanged without one, so older caches stay valid.
+  const policy = label === "candidate" && args.policy
+    ? { ...implementation.analysis.SEARCH_POLICY, broadPass: args.policy } : undefined;
+  const keyParts = [cacheVersion, engineId, implementation.source, searchDepth, reference, workers];
+  const key = hash(JSON.stringify(policy ? [...keyParts, policy] : keyParts));
   const path = join(cacheDir, `${label}-${key}.jsonl`);
   const entries = await readCache(path);
   const missing = positions.filter(({ id }) => !entries.has(id));
@@ -258,7 +205,7 @@ async function collect(label, implementation, positions) {
         const start = performance.now();
         const comparison = reference
           ? await referencePosition(engine, position)
-          : await reviewPosition(engine, position, analysis);
+          : await reviewPosition(engine, position, analysis, policy);
         // Isolated decisions have no previous reviewed move. Mistake, Miss, and Blunder share the severe group.
         const review = analysis.scoreDecision(position.before, position.after, comparison, 0);
         const entry = asResult(position, comparison, review, engine.worker.searches, start);
@@ -371,6 +318,7 @@ const result = {
 };
 if (args.candidate) {
   const candidate = await loadImplementation(args.candidate);
+  if (args.policy && !candidate.analysis.SEARCH_POLICY) throw new Error("--policy needs a candidate with SEARCH_POLICY");
   const candidateResult = await collect("candidate", candidate, positions);
   result.candidate = summarize(candidateResult, referenceResult, depth);
   result.paired = pairedComparison(baselineResult, candidateResult, referenceResult);

@@ -157,3 +157,23 @@ test('keeps clock annotations and later moves after a PGN line comment with brac
   assert.equal(positions.length, 5);
   assert.equal(positions[1].practicalContext.whiteSeconds, 299);
 });
+
+test('the broad pass runs when the label is at risk and skips stable same-grade drift', async () => {
+  const { needsBroaderSearch } = await import('../analysis.js');
+  const pass = (key, winLoss) => ({ key, winLoss });
+  // The grade changed between depths.
+  assert.equal(needsBroaderSearch(pass('mistake', 19), pass('blunder', 21)), true);
+  // Praise must hold its loss as well as its label.
+  assert.equal(needsBroaderSearch(pass('great', 0), pass('great', 3)), true);
+  assert.equal(needsBroaderSearch(pass('great', 0), pass('great', 1)), false);
+  // A blunder drifting deeper into blunder territory, or an inaccuracy moving inside its band, is settled.
+  assert.equal(needsBroaderSearch(pass('blunder', 35), pass('blunder', 31)), false);
+  assert.equal(needsBroaderSearch(pass('inaccuracy', 9.8), pass('inaccuracy', 7.2)), false);
+  // A mistake sliding toward the Inaccuracy line at the same rate would reach it.
+  assert.equal(needsBroaderSearch(pass('mistake', 15.4), pass('mistake', 12.1)), true);
+  assert.equal(needsBroaderSearch(pass('mistake', 15.4), pass('mistake', 12.1), 'grade-change'), false);
+  // Small movements never trigger it, and the benchmark modes keep their meaning.
+  assert.equal(needsBroaderSearch(pass('mistake', 12), pass('mistake', 10.5)), false);
+  assert.equal(needsBroaderSearch(pass('blunder', 35), pass('blunder', 31), 'unstable'), true);
+  assert.equal(needsBroaderSearch(pass('mistake', 19), pass('blunder', 21), 'never'), false);
+});

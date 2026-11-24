@@ -18,7 +18,7 @@ async function copyChess(vendor) {
 if (process.argv[2] === "--test") {
   await copyChess(at("vendor"));
 } else {
-  const files = ["analysis.js", "background.js", "calibration-data.js", "coach-api.js", "coach.js", "content.css", "content.js", "decision-quality.js", "difficulty-data.js", "difficulty-model.js", "engine.js", "icons", "practical-model.js", "review.css", "review.html", "review.js"];
+  const files = ["analysis.js", "background.js", "calibration-data.js", "coach-api.js", "coach.js", "content.css", "content.js", "decision-quality.js", "difficulty-data.js", "difficulty-model.js", "drills.js", "engine.js", "human-move-data.js", "human-move-model.js", "icons", "practical-model.js", "review.css", "review.html", "review.js", "tactics.js", "variation.js"];
   await Promise.all(browsers.map(async (browser) => {
     const stage = at("dist", browser);
     const vendor = join(stage, "vendor");

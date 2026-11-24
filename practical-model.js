@@ -1,4 +1,5 @@
 import { CALIBRATION } from "./calibration-data.js";
+import { MISSED_MATE_PRIORITY } from "./tactics.js";
 
 const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
 
@@ -50,5 +51,6 @@ export function practicalImpact(best, played, context, mover) {
 }
 
 export function trainingPriority(review) {
-  return Math.max(review.winLoss, review.practicalImpact?.loss ?? 0);
+  const loss = Math.max(review.winLoss, review.practicalImpact?.loss ?? 0);
+  return review.missedMate?.drill ? Math.max(loss, MISSED_MATE_PRIORITY) : loss;
 }

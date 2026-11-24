@@ -5,3 +5,4 @@ dist/
 vendor/
 
 __pycache__/
+.claude/launch.json

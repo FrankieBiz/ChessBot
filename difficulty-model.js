@@ -14,7 +14,8 @@ export function readLichessRatings(headers) {
     ? ratings : null;
 }
 
-export function estimateDifficulty(position, evaluation, mover) {
+/** Cohort-model inputs, or null when the position is outside the trained domain. */
+export function difficultyFeatures(position, evaluation, mover) {
   const { practicalContext, legalMoves, captureCount, inCheck, material, lichessRatings } = position;
   if (!practicalContext || !Number.isInteger(legalMoves) || legalMoves < 2 || evaluation?.type !== "cp" ||
       ![evaluation.value, captureCount, material].every(Number.isFinite) || typeof inCheck !== "boolean") return null;
@@ -45,6 +46,13 @@ export function estimateDifficulty(position, evaluation, mover) {
       model = "lichessRating";
     }
   }
+  return { features, model };
+}
+
+export function estimateDifficulty(position, evaluation, mover) {
+  const input = difficultyFeatures(position, evaluation, mover);
+  if (!input) return null;
+  const { features, model } = input;
   const logit = DIFFICULTY_COEFFICIENTS[model].reduce((sum, weight, index) => sum + weight * features[index], 0);
   return { chance: 100 / (1 + Math.exp(-logit)), model };
 }

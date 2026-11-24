@@ -11,6 +11,10 @@ import {
   MARKER_TYPE,
 } from "./vendor/cm-chessboard/src/extensions/markers/Markers.js";
 import {
+  PromotionDialog,
+  PROMOTION_DIALOG_RESULT_TYPE,
+} from "./vendor/cm-chessboard/src/extensions/promotion-dialog/PromotionDialog.js";
+import {
   CLASSIFICATIONS,
   StockfishEngine,
   computeACPL,
@@ -30,6 +34,12 @@ import {
 import { AI_PRESETS, coachEndpoint, coachRequestBody, migrateCoachSettings } from "./coach-api.js";
 import { trainingPriority } from "./practical-model.js";
 import { computeDecisionQuality } from "./decision-quality.js";
+import { drillHint, drillPrompt, drillRejection, judgeDrillAttempt } from "./drills.js";
+import { describeVariation, moveToUci, parseUciMove, promotionChoices, replayVariation } from "./variation.js";
+import {
+  HUMAN_MOVE_SEARCH_DEPTH, candidateScores, forecastHumanMoves, humanContext, moveFeatureRows,
+} from "./human-move-model.js";
+import { HUMAN_MOVE_MODEL } from "./human-move-data.js";
 import { STOCKFISH_WORKER_PATH } from "./vendor/stockfish/engine-config.js";
 
 const extension = globalThis.browser ?? globalThis.chrome;
@@ -139,9 +149,11 @@ const state = {
   bestLineTimer: null,
 
   exploring: false,
-  variationChess: null,
+  variationBasePly: 0,
+  variationUci: [],
   variationMoves: [],
   variationEvalRunId: 0,
+  boardEpoch: 0,
 
   drillActive: false,
   drillPlies: [],
@@ -151,6 +163,9 @@ const state = {
   drillChecking: false,
 
   coachCache: new Map(),
+  humanForecasts: new Map(),
+  humanForecastBusy: false,
+  humanForecastNext: null,
   aiSettings: {
     preset: "openai",
     endpoint: AI_PRESETS.openai.endpoint,
@@ -228,6 +243,7 @@ const dom = {
   evalDeltaText: document.getElementById("evalDeltaText"),
   practicalImpactText: document.getElementById("practicalImpactText"),
   moveDifficultyText: document.getElementById("moveDifficultyText"),
+  temptingMoveText: document.getElementById("temptingMoveText"),
   gradeConfidenceText: document.getElementById("gradeConfidenceText"),
   moveAccuracyPill: document.getElementById("moveAccuracyPill"),
   pvLinesBox: document.getElementById("pvLinesBox"),
@@ -462,6 +478,7 @@ function initBoard(orientation = "w") {
     extensions: [
       { class: Arrows },
       { class: Markers },
+      { class: PromotionDialog },
     ],
   });
 
@@ -538,7 +555,8 @@ function handleBoardInput(event) {
     }
     stopAutoplay();
     stopBestLineAnimation();
-    const activeChess = getActiveChessInstance();
+    // Legal moves depend only on the FEN; the full history is replayed when the move is committed.
+    const activeChess = new Chess(getActiveFen());
     const moves = activeChess.moves({ square: event.squareFrom, verbose: true });
     board.removeMarkers(MARKER_TYPE.dot);
     for (const m of moves) {
@@ -550,39 +568,20 @@ function handleBoardInput(event) {
   if (event.type === INPUT_EVENT_TYPE.validateMoveInput) {
     board.removeMarkers(MARKER_TYPE.dot);
     const activeChess = getActiveChessInstance();
-    let moveObj = null;
-    try {
-      moveObj = activeChess.move({
-        from: event.squareFrom,
-        to: event.squareTo,
-        promotion: "q",
+    const { squareFrom: from, squareTo: to } = event;
+    if (promotionChoices(activeChess, from, to).length) {
+      // Let the player choose the piece. Underpromotion can be the only winning move.
+      const epoch = state.boardEpoch;
+      const color = activeChess.turn() === "w" ? COLOR.white : COLOR.black;
+      board.showPromotionDialog(to, color, (result) => {
+        if (epoch !== state.boardEpoch) return;
+        const chosen = result.type === PROMOTION_DIALOG_RESULT_TYPE.pieceSelected
+          ? { from, to, promotion: result.piece.charAt(1) } : null;
+        if (!chosen || !commitBoardMove(activeChess, chosen)) board.setPosition(activeChess.fen(), true);
       });
-    } catch {
-      return false;
-    }
-    if (!moveObj) return false;
-
-    playSound(moveObj.san.includes("+") ? "check" : moveObj.captured ? "capture" : "move");
-
-    if (state.drillActive) {
-      const attemptedUci = `${moveObj.from}${moveObj.to}${moveObj.promotion || ""}`;
-      setTimeout(() => evaluateDrillAttempt(moveObj, attemptedUci), 40);
       return true;
     }
-
-    if (!state.exploring) {
-      state.exploring = true;
-      state.variationMoves = [];
-    }
-    state.variationChess = activeChess;
-    state.variationMoves.push(moveObj.san);
-    board.removeArrows();
-    dom.squareBadgeOverlay.classList.add("hidden");
-    board.setPosition(activeChess.fen(), true);
-    updateCapturedPieces(activeChess.fen());
-    renderVariationBanner();
-    evaluateVariationPosition(activeChess.fen());
-    return true;
+    return commitBoardMove(activeChess, { from, to });
   }
 
   if (event.type === INPUT_EVENT_TYPE.moveInputCanceled) {
@@ -591,17 +590,69 @@ function handleBoardInput(event) {
   return true;
 }
 
-async function evaluateVariationPosition(fen) {
-  if (!engine || state.isAnalyzing) return;
-  const runId = ++state.variationEvalRunId;
-  dom.variationEvalTag.textContent = "Eval...";
+function commitBoardMove(activeChess, move) {
+  let moveObj = null;
   try {
-    const game = new Chess(fen);
-    const res = await analyzeGamePosition(engine, {
-      fen, legalMoves: game.moves().length, terminal: terminalPosition(game),
-    }, 12);
+    moveObj = activeChess.move(move);
+  } catch {
+    return false;
+  }
+  if (!moveObj) return false;
+
+  playSound(moveObj.san.includes("+") ? "check" : moveObj.captured ? "capture" : "move");
+  const uci = moveToUci(moveObj);
+  // Castling, en passant, and promotion change more than the dragged piece.
+  board.setPosition(activeChess.fen(), true);
+
+  if (state.drillActive) {
+    setTimeout(() => evaluateDrillAttempt(moveObj, uci, activeChess.isCheckmate()), 40);
+    return true;
+  }
+
+  if (!state.exploring) {
+    state.exploring = true;
+    state.variationBasePly = state.currentPly;
+    state.variationUci = [];
+    state.variationMoves = [];
+  }
+  state.variationUci.push(uci);
+  state.variationMoves.push(moveObj.san);
+  board.removeArrows();
+  dom.squareBadgeOverlay.classList.add("hidden");
+  updateCapturedPieces(activeChess.fen());
+  renderVariationBanner();
+  evaluateVariationPosition();
+  return true;
+}
+
+async function evaluateVariationPosition() {
+  if (!state.exploring) return;
+  const runId = ++state.variationEvalRunId;
+  let position;
+  try {
+    position = describeVariation(state.positions[state.variationBasePly], state.variationUci);
+  } catch {
+    return;
+  }
+  // A repeated position is a claimable draw, not a finished game. Stockfish receives the same history.
+  const drawRule = position.repetition ? "threefold" : position.fiftyMoves ? "50-move" : "";
+  dom.variationEvalTag.title = drawRule ? `A draw can be claimed under the ${drawRule} rule` : "";
+  const withRule = (text) => drawRule ? `${text} · ${drawRule}` : text;
+  if (position.terminal) {
+    dom.variationEvalTag.textContent = position.terminal.checkmate ? "#" : "½–½";
+    updateEvalBarFromData(position.terminal);
+    board.removeArrows();
+    return;
+  }
+  if (!engine || state.isAnalyzing) {
+    dom.variationEvalTag.textContent = withRule("");
+    return;
+  }
+  dom.variationEvalTag.textContent = withRule("Eval...");
+  try {
+    const res = await analyzeGamePosition(engine, position, 12);
     if (runId !== state.variationEvalRunId || !state.exploring) return;
-    dom.variationEvalTag.textContent = res.checkmate ? "#" : formatEval(res.eval);
+    dom.variationEvalTag.textContent = withRule(formatEval(res.eval));
     updateEvalBarFromData(res);
     board.removeArrows();
     const best = parseUci(res.bestMove);
@@ -613,12 +664,16 @@ async function evaluateVariationPosition(fen) {
   }
 }
 
+function getActiveFen() {
+  if (state.exploring) return getActiveChessInstance().fen();
+  return state.positions[state.currentPly]?.fen ?? new Chess().fen();
+}
+
+/** The board position with its full game history, including any explored moves. */
 function getActiveChessInstance() {
-  if (state.exploring && state.variationChess) {
-    return new Chess(state.variationChess.fen());
-  }
-  const pos = state.positions[state.currentPly];
-  return new Chess(pos ? pos.fen : undefined);
+  const base = state.positions[state.exploring ? state.variationBasePly : state.currentPly];
+  if (!base) return new Chess();
+  return replayVariation(base, state.exploring ? state.variationUci : []);
 }
 
 function renderVariationBanner() {
@@ -629,15 +684,21 @@ function renderVariationBanner() {
     dom.variationBanner.classList.add("hidden");
     dom.variationMovesText.textContent = "";
     dom.variationEvalTag.textContent = "";
+    dom.variationEvalTag.title = "";
   }
+}
+
+function clearVariationState() {
+  state.exploring = false;
+  state.variationBasePly = 0;
+  state.variationUci = [];
+  state.variationMoves = [];
 }
 
 function exitVariation() {
   stopBestLineAnimation();
   if (!state.exploring) return;
-  state.exploring = false;
-  state.variationChess = null;
-  state.variationMoves = [];
+  clearVariationState();
   state.variationEvalRunId++;
   renderVariationBanner();
   goToPly(state.currentPly, true);
@@ -660,11 +721,13 @@ function playBestLineOnBoard() {
   const posBefore = state.positions[ply - 1];
   if (!evalBefore || !evalBefore.pv || !evalBefore.pv.length || !posBefore) return;
 
-  const sim = new Chess(posBefore.fen);
+  const sim = replayVariation(posBefore);
   const pvMoves = evalBefore.pv.slice(0, 6);
 
+  state.boardEpoch++;
   state.exploring = true;
-  state.variationChess = sim;
+  state.variationBasePly = ply - 1;
+  state.variationUci = [];
   state.variationMoves = [];
   board.removeArrows();
   dom.squareBadgeOverlay.classList.add("hidden");
@@ -674,19 +737,21 @@ function playBestLineOnBoard() {
 
   let step = 0;
   const playNext = () => {
-    if (!state.exploring || step >= pvMoves.length) {
+    if (!state.exploring) {
       state.bestLineTimer = null;
       return;
     }
-    const parsed = parseUci(pvMoves[step]);
+    if (step >= pvMoves.length) {
+      state.bestLineTimer = null;
+      evaluateVariationPosition();
+      return;
+    }
+    const parsed = parseUciMove(pvMoves[step]);
     if (!parsed) return;
     try {
-      const m = sim.move({
-        from: parsed.from,
-        to: parsed.to,
-        promotion: parsed.promotion || "q",
-      });
+      const m = sim.move(parsed);
       if (!m) return;
+      state.variationUci.push(moveToUci(m));
       state.variationMoves.push(m.san);
       board.setPosition(sim.fen(), true);
       board.removeArrows();
@@ -742,11 +807,10 @@ function loadGameFromPayload(payload) {
   state.evals = new Array(positions.length).fill(null);
   state.moveReviews = new Array(positions.length).fill(null);
   state.currentPly = 0;
-  state.exploring = false;
-  state.variationChess = null;
-  state.variationMoves = [];
+  clearVariationState();
   resetDrillProgress();
   state.coachCache.clear();
+  state.humanForecasts.clear();
 
   dom.keyMomentsWrap.classList.add("hidden");
   dom.phaseStrip.classList.add("hidden");
@@ -815,6 +879,7 @@ async function runFullAnalysis() {
   state.evals.fill(null);
   state.moveReviews.fill(null);
   state.coachCache.clear();
+  state.humanForecasts.clear();
   switchTab("review");
   resetDrillProgress();
   updateScoreboard();
@@ -900,11 +965,10 @@ function goToPly(ply, animate = true, withSound = false) {
   stopBestLineAnimation();
   const clamped = Math.max(0, Math.min(state.positions.length - 1, ply));
   state.currentPly = clamped;
+  state.boardEpoch++;
 
   if (state.exploring) {
-    state.exploring = false;
-    state.variationChess = null;
-    state.variationMoves = [];
+    clearVariationState();
     renderVariationBanner();
   }
 
@@ -1103,14 +1167,7 @@ function renderCoachCard(ply) {
     dom.practicalImpactText.title = `Estimated change in expected game score ${basis}, on a 0–100 scale`;
   }
 
-  const difficulty = review.difficulty;
-  dom.moveDifficultyText.classList.toggle("hidden", !difficulty);
-  if (difficulty) {
-    const rounded = Math.round(difficulty.chance / 5) * 5;
-    dom.moveDifficultyText.textContent = `Estimated sound-move find rate ≈ ${rounded}%`;
-    const basis = difficulty.model === "lichessRating" ? "at these Lichess ratings and clocks" : "in similar positions";
-    dom.moveDifficultyText.title = `Estimated share of human moves ${basis} that lose at most five position-score points`;
-  }
+  renderDifficulty(ply, review);
   dom.gradeConfidenceText.textContent = `Grade uncertain at depth ${review.depth}`;
   dom.gradeConfidenceText.classList.toggle("hidden", review.searchConfidence !== "borderline");
 
@@ -1145,6 +1202,76 @@ function renderCoachCard(ply) {
   if (state.coachCache.has(ply)) {
     dom.aiCoachText.textContent = state.coachCache.get(ply);
     dom.aiCoachOutput.classList.remove("hidden");
+  }
+}
+
+function renderDifficulty(ply, review) {
+  const forecast = state.humanForecasts.get(ply);
+  const difficulty = forecast ?? review.difficulty;
+  dom.moveDifficultyText.classList.toggle("hidden", !difficulty);
+  dom.temptingMoveText.classList.add("hidden");
+  if (forecast) {
+    const level = forecast.variant === "rated" ? "at this Lichess rating" : "in similar positions";
+    dom.moveDifficultyText.textContent = `Players find a sound move ≈ ${Math.round(forecast.soundChance / 5) * 5}%`;
+    dom.moveDifficultyText.title = `Move-level estimate ${level}: the chance of choosing a move that loses at most ` +
+      `five expected-score points, from Stockfish's score for every legal move`;
+    const tempting = forecast.tempting;
+    if (tempting && tempting.probability >= 0.08) {
+      // For the game move, quote the review's deeper loss so the card shows one figure for it.
+      const played = tempting.uci === state.positions[ply].move.uci;
+      const loss = played ? review.winLoss : tempting.loss;
+      dom.temptingMoveText.textContent = `Most tempting mistake: ${tempting.san}${played ? ", the game move" : ""} ` +
+        `(≈${Math.round(tempting.probability * 100)}% of players, −${loss.toFixed(0)} pts)`;
+      dom.temptingMoveText.title = "The unsound move the human-choice model rates most likely, with its expected-score loss";
+      dom.temptingMoveText.classList.remove("hidden");
+    }
+  } else if (difficulty) {
+    const rounded = Math.round(difficulty.chance / 5) * 5;
+    dom.moveDifficultyText.textContent = `Estimated sound-move find rate ≈ ${rounded}%`;
+    const basis = difficulty.model === "lichessRating" ? "at these Lichess ratings and clocks" : "in similar positions";
+    dom.moveDifficultyText.title = `Estimated share of human moves ${basis} that lose at most five position-score points`;
+  }
+  if (!forecast) requestHumanForecast(ply);
+}
+
+/** Search every legal move once the review is idle, then forecast which moves a human would choose. */
+async function requestHumanForecast(ply) {
+  if (!HUMAN_MOVE_MODEL || !engine?.ready || state.isAnalyzing || ply < 1 || state.humanForecasts.has(ply)) return;
+  if (state.humanForecastBusy) {
+    state.humanForecastNext = ply;
+    return;
+  }
+  const before = state.positions[ply - 1];
+  const after = state.positions[ply];
+  if (!before || !after?.move || before.terminal || before.legalMoves < 2) return;
+  state.humanForecastBusy = true;
+  const runId = state.analysisRunId;
+  try {
+    // Start from a cleared search table, as in training and validation. Entries left by the review's
+    // deep search of the played move would otherwise single that move out.
+    await engine.startNewGame();
+    const search = await engine.analyzePosition(before.fen, HUMAN_MOVE_SEARCH_DEPTH, {
+      ...before.searchOptions, multiPv: before.legalMoves,
+    });
+    if (runId !== state.analysisRunId || search.lines.length !== before.legalMoves) return;
+    const { color } = after.move;
+    const clocks = before.practicalContext;
+    const context = humanContext({
+      rating: before.lichessRatings?.[color] ?? null,
+      clockSeconds: clocks ? (color === "w" ? clocks.whiteSeconds : clocks.blackSeconds) : null,
+    });
+    const rows = moveFeatureRows(replayVariation(before), candidateScores(search, color), context, before.move?.to ?? null);
+    const forecast = forecastHumanMoves(rows, context);
+    if (!forecast) return;
+    state.humanForecasts.set(ply, forecast);
+    if (state.currentPly === ply && !state.exploring && state.moveReviews[ply]) renderDifficulty(ply, state.moveReviews[ply]);
+  } catch {
+    // The review keeps the cohort estimate.
+  } finally {
+    state.humanForecastBusy = false;
+    const next = state.humanForecastNext;
+    state.humanForecastNext = null;
+    if (next !== null && next === state.currentPly) requestHumanForecast(next);
   }
 }
 
@@ -1645,10 +1772,10 @@ function loadCurrentDrillStep() {
   state.drillSolved = false;
   state.drillChecking = false;
 
-  dom.drillCounter.textContent = `Mistake ${state.drillIndex + 1} of ${state.drillPlies.length} • Move ${moveNum}`;
+  const label = rev.missedMate?.drill ? "Missed mate" : "Mistake";
+  dom.drillCounter.textContent = `${label} ${state.drillIndex + 1} of ${state.drillPlies.length} • Move ${moveNum}`;
   dom.drillPromptText.className = "drill-prompt";
-  dom.drillPromptText.textContent =
-    `In the game you played ${playedSan} (${rev.classification.label}). Drag a piece on the board to find a stronger move!`;
+  dom.drillPromptText.textContent = drillPrompt({ playedSan, review: rev });
   dom.drillNextBtn.classList.add("hidden");
   dom.drillDoneCard.classList.add("hidden");
   renderDrillDots();
@@ -1657,68 +1784,49 @@ function loadCurrentDrillStep() {
   enableBoardInput();
 }
 
-async function evaluateDrillAttempt(moveObj, attemptedUci) {
+async function evaluateDrillAttempt(moveObj, attemptedUci, deliversMate) {
   const mistakePly = state.drillPlies[state.drillIndex];
   const beforePos = state.positions[mistakePly - 1];
   const originalMove = state.positions[mistakePly].move;
   const review = state.moveReviews[mistakePly];
-  const bestUci = review.bestMoveUci;
+  const attempt = {
+    attemptUci: attemptedUci, gameUci: originalMove.uci, review, color: originalMove.color, deliversMate,
+  };
+  let judgement = judgeDrillAttempt(attempt);
 
-  if (bestUci && attemptedUci === bestUci) {
-    playSound("success");
-    markDrillSolved(`Great find! ${moveObj.san} is Stockfish's top move.`, bestUci, mistakePly);
-    return;
-  }
-
-  if (attemptedUci === originalMove.uci) {
-    playSound("error");
-    rejectDrillAttempt(
-      `That's the ${moveObj.san} you played in the game (-${review.winLoss.toFixed(0)} points of expected score). Try a stronger idea!`,
-      beforePos.fen
-    );
-    return;
-  }
-
-  if (engine && engine.ready && !state.isAnalyzing) {
+  if (judgement.verdict === "unknown" && engine && engine.ready && !state.isAnalyzing) {
     state.drillChecking = true;
     dom.drillPromptText.className = "drill-prompt";
     dom.drillPromptText.textContent = `Checking ${moveObj.san} with Stockfish...`;
     try {
       const runId = state.analysisRunId;
-      const result = await compareRootMoves(engine, beforePos, attemptedUci, review.depth, state.evals[mistakePly - 1]);
+      const comparison = await compareRootMoves(engine, beforePos, attemptedUci, review.depth, state.evals[mistakePly - 1]);
       if (!state.drillActive || mistakePly !== state.drillPlies[state.drillIndex] || runId !== state.analysisRunId) {
         state.drillChecking = false;
         return;
       }
-      const sign = originalMove.color === "w" ? 1 : -1;
-      const loss = Math.max(0, (result.root.winWhite - result.played.winWhite) * sign);
-      state.drillChecking = false;
-
-      if (loss <= 3.0) {
-        playSound("success");
-        markDrillSolved(
-          `Nice! ${moveObj.san} is also strong (top engine move was ${review.bestSan}).`,
-          bestUci,
-          mistakePly
-        );
-        return;
-      }
-      playSound("error");
-      rejectDrillAttempt(
-        `Not quite — ${moveObj.san} still loses ${loss.toFixed(1)} points of expected score. Try again!`,
-        beforePos.fen
-      );
-      return;
+      judgement = judgeDrillAttempt({ ...attempt, comparison });
     } catch {
-      state.drillChecking = false;
+      // Keep the unverified judgement.
     }
+    state.drillChecking = false;
+  }
+
+  if (judgement.verdict === "best" || judgement.verdict === "alternative") {
+    playSound("success");
+    let message = `Great find! ${moveObj.san} is Stockfish's top move.`;
+    if (deliversMate) message = `Checkmate! ${moveObj.san} ends the game.`;
+    else if (judgement.verdict === "alternative") {
+      message = review.missedMate?.drill
+        ? `Nice! ${moveObj.san} also forces mate in ${judgement.mate} (Stockfish's line starts ${review.bestSan}).`
+        : `Nice! ${moveObj.san} is also strong (top engine move was ${review.bestSan}).`;
+    }
+    markDrillSolved(message, review.bestMoveUci, mistakePly);
+    return;
   }
 
   playSound("error");
-  rejectDrillAttempt(
-    `Not quite — ${moveObj.san} isn't the best move here. Try again or click Hint.`,
-    beforePos.fen
-  );
+  rejectDrillAttempt(drillRejection({ attemptSan: moveObj.san, judgement, review }), beforePos.fen);
 }
 
 function markDrillSolved(message, bestUci, mistakePly) {
@@ -1762,7 +1870,7 @@ dom.drillHintBtn.addEventListener("click", () => {
     board.removeMarkers(MARKER_TYPE.circle);
     board.addMarker(MARKER_TYPE.circle, best.from);
     dom.drillPromptText.className = "drill-prompt";
-    dom.drillPromptText.textContent = `Hint: Look closely at moving the piece on ${best.from}.`;
+    dom.drillPromptText.textContent = drillHint({ review: state.moveReviews[mistakePly], fromSquare: best.from });
   }
 });
 
@@ -1896,6 +2004,7 @@ dom.aiEndpointInput.addEventListener("change", clearKeyOnEndpointChange);
 
 dom.saveSettingsBtn.addEventListener("click", async () => {
   state.coachCache.clear();
+  state.humanForecasts.clear();
   dom.aiCoachOutput.classList.add("hidden");
   state.aiSettings = {
     preset: dom.aiPresetSelect.value,
