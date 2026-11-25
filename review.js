@@ -390,6 +390,9 @@ dom.pgnTextarea.addEventListener("input", () => {
   const side = pgnSideFor(dom.pgnTextarea.value, [dom.fallbackUsernameInput.value]);
   if (side) dom.pgnColorSelect.value = side;
 });
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) refreshPracticeBadge();
+});
 dom.tabReviewBtn.addEventListener("click", () => switchTab("review"));
 dom.tabMovesBtn.addEventListener("click", () => switchTab("moves"));
 dom.tabDrillsBtn.addEventListener("click", () => switchTab("drills"));

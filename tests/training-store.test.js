@@ -285,3 +285,14 @@ test("a second failure still rejects", async () => {
   }
   await assert.rejects(saveReview(new FullArea(), { game: gameRecord("g1", 1), puzzles: [] }), /quota/);
 });
+
+test("a save failure that isn't a full quota rejects at once without pruning", async () => {
+  class BrokenArea extends MemoryArea {
+    async set() {
+      throw new Error("IO error");
+    }
+  }
+  const area = new BrokenArea({ "training:game:old": gameRecord("old", 1) });
+  await assert.rejects(saveReview(area, { game: gameRecord("g1", 2), puzzles: [] }), /IO error/);
+  assert.equal("training:game:old" in area.data, true);
+});

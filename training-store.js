@@ -49,6 +49,8 @@ async function assertWritable(area) {
   if (!isWritableVersion(stored)) throw new TrainingVersionError();
 }
 
+const isQuotaError = (error) => error?.name === "QuotaExceededError" || /quota/i.test(String(error?.message ?? error));
+
 /** Save one reviewed game and its puzzles, delete puzzles that no longer qualify, then prune old games. */
 export async function saveReview(area, { game, puzzles, removedIds = [] }) {
   await assertWritable(area);
@@ -56,8 +58,9 @@ export async function saveReview(area, { game, puzzles, removedIds = [] }) {
   for (const puzzle of puzzles) entries[puzzleStorageKey(puzzle.id)] = puzzle;
   try {
     await area.set(entries);
-  } catch {
-    // The quota is probably full: make room, then retry once (a second failure propagates).
+  } catch (error) {
+    if (!isQuotaError(error)) throw error;
+    // The quota is full: make room, then retry once (a second failure propagates).
     const { games } = await loadTraining(area);
     await pruneGames(area, Math.max(1, Math.floor(games.size * 0.8)), Math.floor(MAX_ORPHAN_PUZZLES / 2));
     await area.set(entries);
