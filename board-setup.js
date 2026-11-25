@@ -9,14 +9,14 @@ import {
 import { promotionChoices } from "./variation.js";
 
 /** A board with ChessBot's pieces, arrows, markers, and promotion picker. */
-export function createBoard(element, { orientation = "w", position = FEN.start } = {}) {
+export function createBoard(element, { orientation = "w", position = FEN.start, coordinates = true } = {}) {
   return new Chessboard(element, {
     position,
     orientation: orientation === "b" ? COLOR.black : COLOR.white,
     assetsUrl: "./vendor/cm-chessboard/assets/",
     style: {
       cssClass: "default",
-      showCoordinates: true,
+      showCoordinates: coordinates,
       pieces: { file: "pieces/staunty.svg" },
       animationDuration: 180,
     },

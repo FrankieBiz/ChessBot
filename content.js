@@ -1,10 +1,10 @@
 /**
- * Chess.com Local Game Review — Content Script (v1.3 — AMO Linter Clean)
+ * ChessBot — Content Script (v1.3 — AMO Linter Clean)
  * Matches *://*.chess.com/game/*
  *
  * Uses pure DOM APIs (zero innerHTML/outerHTML) to pass Mozilla addons-linter cleanly.
  * Strictly waits for a game to officially end before injecting a full-width
- * "Local Game Review" button. Never triggers during live games.
+ * "ChessBot Review" button. Never triggers during live games.
  */
 (() => {
   "use strict";
@@ -220,7 +220,7 @@
     iconSlot.appendChild(createSparkleIcon());
 
     const labelSpan = document.createElement("span");
-    labelSpan.textContent = "Local Game Review";
+    labelSpan.textContent = "ChessBot Review";
 
     btn.appendChild(iconSlot);
     btn.appendChild(labelSpan);
@@ -262,7 +262,7 @@
 
     if (!username) {
       const entered = window.prompt(
-        "Chess.com Local Game Review:\nEnter your Chess.com username to fetch this game's PGN:"
+        "ChessBot:\nEnter your Chess.com username to fetch this game's PGN:"
       );
       if (!entered || !isValidUsername(entered)) {
         statusEl.textContent = "Please enter a valid Chess.com username.";
@@ -297,7 +297,7 @@
 
       if (response && response.ok) {
         statusEl.className = "clgr-status-text clgr-success";
-        statusEl.textContent = "Opened Local Game Review!";
+        statusEl.textContent = "Opened ChessBot Review!";
         setTimeout(() => {
           resetButton(btn, iconSlot, labelSpan, statusEl);
         }, 2000);
@@ -319,7 +319,7 @@
   function resetButton(btn, iconSlot, labelSpan, statusEl) {
     btn.disabled = false;
     iconSlot.replaceChildren(createSparkleIcon());
-    labelSpan.textContent = "Local Game Review";
+    labelSpan.textContent = "ChessBot Review";
     if (statusEl) {
       statusEl.textContent = "";
       statusEl.className = "clgr-status-text";

@@ -1,5 +1,5 @@
 /**
- * Chess.com Local Game Review — Background Script (Firefox MV3)
+ * ChessBot — Background Script (Firefox MV3)
  *
  * Queries Chess.com's official PubAPI across candidate player usernames with
  * automatic retry/backoff, month-boundary & archive fallback, stores the game

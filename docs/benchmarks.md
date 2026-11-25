@@ -268,3 +268,20 @@ curl --fail --location --range 0-16777215 --max-filesize 16777216 \
 node scripts/benchmark-deep-check.mjs --archive 2026-09.pgn.zst \
   --reference-stockfish /path/to/stockfish --workers 5
 ```
+
+### Parallel two-phase review
+
+ChessBot reviews a game on up to four single-threaded Stockfish engines. The quick phase searches every position and compares every move at the review depth. The deeper checks then run, and each one first repeats its move's quick searches from a cleared search table. Single-threaded Stockfish is deterministic from a cleared table, so each result equals checking that move on its own in one run. The timing test used three rated 10+0 Lichess games from October 2026 between players rated 1335 to 1426. It ran on a MacBook Air with an Apple M3, which has no fan and slows under sustained load.
+
+| Game | Plies | One engine, move by move | Quick phase, four engines | Full review, four engines | Moves identical to separate checks |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| [oJHcigqo](https://lichess.org/oJHcigqo) | 70 | 351.6 s | 29.8 s | 139.3 s | 70 / 70 |
+| [PERrcovj](https://lichess.org/PERrcovj) | 71 | 136.0 s | 17.3 s | 69.9 s | 71 / 71 |
+| [Vg0fM6xz](https://lichess.org/Vg0fM6xz) | 79 | 124.7 s | 20.4 s | 49.4 s | 79 / 79 |
+
+Full reviews were 1.9 to 2.5 times faster, and the complete quick-phase summary appeared after 17 to 30 seconds. Six or eight engines were no faster than four on this machine, because the extra cores are efficiency cores. Machines with more performance cores or better cooling should gain more. On the 144 decisions of the search benchmark, every pooled grade, loss, and confidence label also matched. The grades kept the same agreement with the depth-22 reference: 118 exact, 142 severe versus nonsevere, and 0.543 points mean loss error. Starting deeper checks from a cleared table without repeating the quick searches gave 0.806 points mean loss error, so ChessBot repeats them. [Results](../research/review-speed-2026-11.json)
+
+```sh
+node scripts/benchmark-review-speed.mjs --pgn games.pgn --check
+```
+

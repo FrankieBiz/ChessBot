@@ -24,13 +24,20 @@ export const PHASES = ["opening", "middlegame", "endgame"];
 /** Report rows, in tie-break order. Each Mistake, Miss, or Blunder gets one row from its coach tag. */
 export const THEMES = [
   { id: "hanging", label: "Left a piece hanging", tags: ["Hanging Piece"] },
-  { id: "allowed-tactic", label: "Allowed a tactic", tags: ["Engine Capture"] },
-  { id: "allowed-mate", label: "Allowed checkmate", tags: ["Missed Defense"] },
-  { id: "missed-material", label: "Missed winning material", tags: ["Missed Tactic"] },
+  { id: "allowed-tactic", label: "Allowed a tactic", tags: [
+    "Engine Capture", "Lost Material", "Fork", "Pin", "Skewer", "Discovered Attack", "Discovered Check", "Double Check",
+  ] },
+  { id: "allowed-mate", label: "Allowed checkmate", tags: ["Missed Defense", "Back-Rank Mate", "Checkmate"] },
+  { id: "king-safety", label: "Weakened your king", tags: ["King Exposed", "King Shield", "Castling Rights"] },
+  { id: "missed-material", label: "Missed winning material", tags: [
+    "Missed Tactic", "Missed Recapture", "Missed Free Piece", "Missed Fork", "Missed Pin", "Missed Skewer", "Missed Discovered Attack",
+    "Missed Discovered Check", "Missed Double Check",
+  ] },
   { id: "missed-mate", label: "Missed checkmate", tags: ["Missed Mate"] },
   { id: "missed-refutation", label: "Didn't punish a mistake", tags: ["Missed Refutation"] },
   { id: "missed-forcing", label: "Missed a check or promotion", tags: ["Missed Check", "Promotion"] },
-  { id: "positional", label: "No single tactic", tags: ["Critical Error", "Positional Slip"] },
+  { id: "development", label: "Slow development", tags: ["Early Queen"] },
+  { id: "positional", label: "No single tactic", tags: ["Critical Error", "Positional Slip", "Passed Pawn", "Passive Piece"] },
 ];
 const THEME_BY_TAG = new Map(THEMES.flatMap((theme) => theme.tags.map((tag) => [tag, theme.id])));
 

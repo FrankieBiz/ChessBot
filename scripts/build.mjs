@@ -18,7 +18,7 @@ async function copyChess(vendor) {
 if (process.argv[2] === "--test") {
   await copyChess(at("vendor"));
 } else {
-  const files = ["analysis.js", "background.js", "board-setup.js", "calibration-data.js", "coach-api.js", "coach-evidence.js", "coach.js", "content.css", "content.js", "decision-quality.js", "deck.js", "difficulty-data.js", "difficulty-model.js", "drills.js", "engine.js", "human-move-data.js", "human-move-model.js", "icons", "opening-book-data.js", "opening-book.js", "opening-explorer-data.js", "opening-explorer.js", "performance-data.js", "performance.js", "practical-model.js", "practice.css", "practice.html", "practice.js", "review.css", "review.html", "review.js", "tactics.js", "training-store.js", "variation.js", "weakness.js"];
+  const files = ["analysis.js", "background.js", "board-setup.js", "calibration-data.js", "coach-api.js", "coach-evidence.js", "coach-reasons.js", "coach.js", "content.css", "content.js", "decision-quality.js", "deck.js", "difficulty-data.js", "difficulty-model.js", "drills.js", "annotated-pgn.js", "board-shapes.js", "engine-pool.js", "engine.js", "eval-chart.js", "lines.js", "human-move-data.js", "human-move-model.js", "icons", "motifs.js", "opening-book-data.js", "opening-book.js", "opening-explorer-data.js", "opening-explorer.js", "performance-data.js", "performance.js", "practical-model.js", "practice.css", "practice.html", "practice.js", "report.js", "review.css", "review.html", "review-run.js", "review.js", "tactics.js", "training-store.js", "variation.js", "weakness.js"];
   await Promise.all(browsers.map(async (browser) => {
     const stage = at("dist", browser);
     const vendor = join(stage, "vendor");

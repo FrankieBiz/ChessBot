@@ -4,7 +4,7 @@ This page explains how ChessBot grades moves, decides how deeply to search, and 
 
 ## Scoring a game
 
-- **Engine** — Stockfish.js 19.0.1 runs the full Stockfish 19 NNUE network in a local single-threaded WASM worker. ChessBot compares the played move and alternatives at the same position, search depth, and perspective. It reruns sharp positions and suspected errors at greater depth within a node budget. PGN move history reaches the engine so it can evaluate repetitions. [Stockfish 19](https://stockfishchess.org/blog/2026/stockfish-19/) · [Stockfish.js builds](https://github.com/nmrugg/stockfish.js/tree/v19.0.1) · [UCI commands](https://official-stockfish.github.io/docs/stockfish-wiki/UCI-Protocol-and-Stockfish-Commands.html)
+- **Engine** — Stockfish.js 19.0.1 runs the full Stockfish 19 NNUE network in local single-threaded WASM workers, up to four at once. ChessBot compares the played move and alternatives at the same position, search depth, and perspective. It reruns sharp positions and suspected errors at greater depth within a node budget. PGN move history reaches the engine so it can evaluate repetitions. [Stockfish 19](https://stockfishchess.org/blog/2026/stockfish-19/) · [Stockfish.js builds](https://github.com/nmrugg/stockfish.js/tree/v19.0.1) · [UCI commands](https://official-stockfish.github.io/docs/stockfish-wiki/UCI-Protocol-and-Stockfish-Commands.html)
 - **Move grades** — Grades reflect the engine's expected-score drop, calculated as win probability plus half the draw probability. Stockfish calibrates those probabilities on engine self-play. The move card shows the loss alongside the centipawn evaluation and the separate human practical-impact estimate. Great and Brilliant require evidence from deeper search. A Brilliant also requires a meaningful material investment visible in the continuation. Grade thresholds are ChessBot heuristics. [Stockfish WDL model](https://github.com/official-stockfish/WDL_model)
 - **Missed mates** — A missed mate in 1 is graded Miss even when the position stays won, and so is a mate in 2 or 3 that the played move no longer forces. The decision then appears in the Mistakes trainer. Its expected-score loss, accuracy, and Decision Quality stay the same, because a won position remains won. A mate in 2 or 3 that is only delayed, such as mate in 2 becoming mate in 4, is described on the move card without a drill. A larger loss keeps its Mistake or Blunder grade.
 - **Accuracy and ACPL** — ChessBot applies Lichess's centipawn-to-win curve and combines volatility-weighted and harmonic means. The input is ChessBot's same-position analysis. Accuracy and average centipawn loss count decisions with more than one legal option, including Book moves. The game summary shows the number of scored decisions and the number with uncertain grades. Opening, middlegame, and endgame scores use move number and remaining material. [Lichess accuracy method](https://lichess.org/page/accuracy) · [Lichess source](https://github.com/lichess-org/lila/blob/master/modules/analyse/src/main/AccuracyPercent.scala)
@@ -18,7 +18,7 @@ Stockfish still evaluates every Book move. ChessBot uses Book for ordinary sound
 
 ## Search confidence and Decision Quality
 
-The normal review starts each game with a cleared Stockfish search table. ChessBot rechecks sharp positions, suspected errors, and moves close to a grade boundary two plies deeper. A third, broader pass searches three candidates four plies deeper and then compares the played move at the same root. It runs only when the grade is still at risk:
+A review runs in two phases. The quick phase searches every position and compares every move at the review depth. Moves that need more evidence are then checked deeper, and the move list marks them as checking until they finish. Each search task starts from a cleared Stockfish search table, and single-threaded Stockfish is deterministic from a cleared table. A deeper check first repeats the move's quick searches, so its result is the same as checking that move in one uninterrupted run, whichever engine runs it. ChessBot rechecks sharp positions, suspected errors, and moves close to a grade boundary two plies deeper. A third, broader pass searches three candidates four plies deeper and then compares the played move at the same root. It runs only when the grade is still at risk:
 
 - the grade changed between the first two passes,
 - Great or Brilliant praise did not hold, or
@@ -27,6 +27,25 @@ The normal review starts each game with a cleared Stockfish search table. ChessB
 Stockfish can stop at its node limit before it reaches the requested depth. ChessBot uses the deepest batch that contains every requested line with an exact score from the same depth. If the first comparison cannot score the full shortlist, ChessBot can retry the initial leader and the played move together. That narrower result is provisional because another alternative may be stronger. Great and Brilliant require the distinction to persist across two complete comparisons at different depths. The move card shows the depth used and flags grades whose evidence changed or whose required recheck could not complete. [Stockfish 19 search output](https://github.com/official-stockfish/Stockfish/blob/sf_19/src/search.cpp#L2273-L2337)
 
 **Decision Quality** is a second 0–100 score. ChessBot subtracts the root-mean-square expected-score loss from 100, counting only decisions with more than one legal move. Squaring the losses gives large mistakes more influence. The largest individual loss is shown alongside the score. The original accuracy percentage uses its Lichess-style game weighting.
+
+## Named tactics
+
+The coach names a tactic only when it can verify it on the board along Stockfish's line. It checks the line's first move and, after a forcing first move such as a check or capture, the side's next move. Recognized patterns are:
+
+- a fork, where one piece attacks two or more valuable targets,
+- a pin or skewer by the piece that just moved,
+- a discovered attack or check, where a move opens another piece's line,
+- a double check,
+- a back-rank mate or other mate within three moves, and
+- a capture of an undefended piece.
+
+A named tactic must win one of the attacked pieces, following a piece that moves away. Within five plies of the tactic, the side must come out at least two points of material ahead, or the line must mate. Material is measured from before the exchange in progress, so winning back a piece that was just taken does not count. When no pattern passes these checks, the card keeps its general explanation.
+
+## Explaining a mistake
+
+Every Inaccuracy, Mistake, Miss, and Blunder gets the most concrete reason ChessBot can verify. A named tactic comes first. Otherwise ChessBot replays Stockfish's line after the played move, counting material over six plies plus any exchange still under way, from before the move. When the line wins material, the card names the capture that decides it and whether that piece was undefended or attacked more often than defended. A Blunder with no loss in that window is checked over twelve plies, and the card says the loss comes further along the line. Two or more checks against the king, and a passed pawn that advances twice or promotes, are named too.
+
+For the better move, ChessBot names a recapture the game move skipped, or the material Stockfish's best line wins. Taking back the piece the opponent just captured does not count as a win. Without a concrete consequence, the card states facts about the move: a king move that gives up castling, a pawn moved in front of the castled king, the queen's first move while minor pieces are still at home, or a retreat that leaves a piece with at least three fewer moves. It also says what the better move does, such as castling, developing a piece, taking a piece, or using an open file. A Blunder's explanation never rests on such a fact alone; without a concrete consequence, the card shows the evaluation change and Stockfish's best line.
 
 ## Practice drills
 

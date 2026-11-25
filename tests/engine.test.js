@@ -132,3 +132,46 @@ test('an explicit node limit reaches UCI and invalid budgets are rejected', asyn
     engine.terminate();
   }
 });
+
+test('a slow search that keeps reporting finishes, and a silent one times out', async (t) => {
+  const originalWorker = globalThis.Worker;
+  let silent = false;
+  let worker;
+  class SlowWorker {
+    constructor() { worker = this; }
+    postMessage(command) {
+      const emit = (data) => this.onmessage?.({ data });
+      if (command === 'uci') queueMicrotask(() => emit('uciok'));
+      if (command === 'isready') queueMicrotask(() => emit('readyok'));
+    }
+    terminate() {}
+  }
+  globalThis.Worker = SlowWorker;
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const engine = new StockfishEngine('stockfish.js');
+  try {
+    await engine.init();
+    const fen = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+    const emit = (data) => worker.onmessage?.({ data });
+    // Output every 30 seconds keeps a 90-second search alive.
+    const slow = engine.analyzePosition(fen, 9, { multiPv: 1 });
+    await new Promise((resolve) => queueMicrotask(resolve));
+    await new Promise((resolve) => setImmediate(resolve));
+    for (let second = 30; second <= 90; second += 30) {
+      t.mock.timers.tick(30_000);
+      emit(`info depth ${second / 10} multipv 1 score cp 30 wdl 100 900 0 pv e2e4`);
+    }
+    emit('bestmove e2e4');
+    assert.equal((await slow).depth, 9);
+
+    silent = true;
+    const stuck = engine.analyzePosition(fen, 9, { multiPv: 1 });
+    await new Promise((resolve) => setImmediate(resolve));
+    t.mock.timers.tick(45_000);
+    await assert.rejects(stuck, /timed out/);
+    assert.ok(silent);
+  } finally {
+    engine.terminate();
+    globalThis.Worker = originalWorker;
+  }
+});

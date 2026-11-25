@@ -31,6 +31,15 @@ test("every coach tag for a Mistake, Miss, or Blunder has a report row", async (
     // Strings at the start or after ? and : are results; strings after === are comparisons.
     for (const [, tag] of expression.matchAll(/(?:^|[?:]\s*)"([^"]+)"/g)) tags.add(tag);
   }
+  // Tactic tags come from motifs.js labels: the label when allowed, "Missed …" when missed.
+  const { TACTIC_LABEL } = await import("../motifs.js");
+  for (const [kind, label] of Object.entries(TACTIC_LABEL)) {
+    tags.add(label);
+    if (kind !== "free capture" && !kind.endsWith("mate")) tags.add(`Missed ${label}`);
+  }
+  tags.add("Missed Free Piece");
+  const { REASON_TAGS } = await import("../coach-reasons.js");
+  for (const tag of REASON_TAGS) tags.add(tag);
   const praiseTags = ["Checkmate", "Forced Move", "Tactical Sacrifice", "Critical Move", "Equally Strong",
     "King Safety", "Tactical Precision", "Top Engine Move", "Strong Move", "Solid Play"];
   const mapped = new Set(THEMES.flatMap((theme) => theme.tags));

@@ -6,7 +6,7 @@ Security fixes go into the latest release.
 
 | Version | Supported |
 | --- | --- |
-| 3.5.x | Yes |
+| 3.8.x | Yes |
 | Earlier | No |
 
 ## Reporting a vulnerability

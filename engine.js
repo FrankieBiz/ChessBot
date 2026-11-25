@@ -273,7 +273,7 @@ export class StockfishEngine {
       if (this.worker === worker) this.terminate(new Error(`Stockfish worker error: ${message || "unknown error"}`));
     };
 
-    this.initPromise = this.waitForOutput(30000, "Stockfish initialization timed out", (finish) => (line) => {
+    this.initPromise = this.waitForOutput(60000, "Stockfish initialization timed out", (finish) => (line) => {
       if (line === "uciok") {
         worker.postMessage("setoption name Hash value 32");
         worker.postMessage("setoption name UCI_ShowWDL value true");
@@ -287,17 +287,27 @@ export class StockfishEngine {
     return this.initPromise;
   }
 
-  waitForOutput(timeout, errorMessage, handler) {
+  /**
+   * Wait for the handler to finish. With `idle`, the timeout counts from the engine's last output
+   * instead of the start, so a search slowed by a busy computer still finishes while a stuck one fails.
+   */
+  waitForOutput(timeout, errorMessage, handler, { idle = false } = {}) {
     return new Promise((resolve, reject) => {
       const settle = (callback) => (value) => {
         clearTimeout(timer);
         this.request = null;
         callback(value);
       };
-      const timer = setTimeout(() => this.terminate(new Error(errorMessage)), timeout);
+      const expire = () => this.terminate(new Error(errorMessage));
+      let timer = setTimeout(expire, timeout);
       const fail = settle(reject);
+      const onLine = handler(settle(resolve), fail);
       this.request = {
-        onLine: handler(settle(resolve), fail),
+        onLine: idle ? (line) => {
+          clearTimeout(timer);
+          timer = setTimeout(expire, timeout);
+          onLine(line);
+        } : onLine,
         reject: fail,
       };
     });
@@ -317,7 +327,7 @@ export class StockfishEngine {
 
   startNewGame() {
     return this.enqueue(() => {
-      const response = this.waitForOutput(15000, "Stockfish did not reset for the new game", (finish) => (line) => {
+      const response = this.waitForOutput(30000, "Stockfish did not reset for the new game", (finish) => (line) => {
         if (line === "readyok") finish();
       });
       this.worker.postMessage("ucinewgame");
@@ -368,7 +378,7 @@ export class StockfishEngine {
       const candidateLines = complete ?? (leader && [leader]);
       if (candidateLines) finish(summarizeLines(candidateLines, turn));
       else fail(new IncompleteStockfishSearch("Stockfish returned no complete evaluation"));
-    });
+    }, { idle: true });
     this.worker.postMessage(`setoption name MultiPV value ${multiPv}`);
     const played = history.length ? ` moves ${history.join(" ")}` : "";
     const restrict = searchMoves.length ? ` searchmoves ${searchMoves.join(" ")}` : "";

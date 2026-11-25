@@ -17,10 +17,21 @@ import {
 } from "./coach.js";
 
 import {
-  analyzeDecision, analyzeGamePosition, compareRootMoves, deepCheckDecision, parseReviewGame, scoreDecision, terminalPosition,
+  analyzeGamePosition, compareRootMoves, deepCheckDecision, parseReviewGame, scoreDecision, terminalPosition,
 } from "./analysis.js";
+import { EnginePool, enginePoolSize } from "./engine-pool.js";
+import { runReview } from "./review-run.js";
 import { AI_PRESETS, coachEndpoint, coachRequestBody, migrateCoachSettings } from "./coach-api.js";
 import { coachEvidence } from "./coach-evidence.js";
+import { findTactic, reviewTactics, tacticArrows } from "./motifs.js";
+import { captureGain, describeThreat, lineSteps, threatFen } from "./lines.js";
+import { arrowLine, makeShape, shapeColor, squareAt, squareCenter, toggleShape } from "./board-shapes.js";
+import { annotatedPgn, GRADE_NAG, mistakeComment, pgnFileName, swingText } from "./annotated-pgn.js";
+import { explainError } from "./coach-reasons.js";
+import { problemReportUrl } from "./report.js";
+import {
+  advantagePoints, areaPath, formatSeconds, linePath, moveLabel, moveTimes, phaseDivisions, plyAt,
+} from "./eval-chart.js";
 import { bookForReview, findBookMoves } from "./opening-book.js";
 import { BOOK_MAX_PLY } from "./opening-book-data.js";
 import { OPENING_EXPLORER_SAMPLE, openingChoices } from "./opening-explorer.js";
@@ -46,6 +57,7 @@ const ARROW_BEST = { class: "arrow-best" };
 const ARROW_PLAYED_BAD = { class: "arrow-played-bad" };
 const ARROW_BRILLIANT = { class: "arrow-brilliant" };
 const ARROW_COACH_REPLY = { class: "arrow-coach-reply" };
+const ARROW_TACTIC = { class: "arrow-tactic" };
 const BOOK_CLASSIFICATION = { key: "book", label: "Book", symbol: "📖", color: "#bda181" };
 const REVIEW_CLASSIFICATIONS = { ...CLASSIFICATIONS, book: BOOK_CLASSIFICATION };
 
@@ -146,9 +158,17 @@ const state = {
   openingReentryPly: -1,
   evals: [],
   moveReviews: [],
+  // Per ply: the engine comparison behind moveReviews, and the first root search used for peer predictions.
+  comparisons: [],
+  initialRoots: [],
+  // Plies with a quick grade that a deeper check may still change.
+  pendingPlies: new Set(),
   currentPly: 0,
   orientation: "w",
   activeTab: "review",
+  // The review chart: "advantage" or "times", and the drawn points for hover.
+  chartMode: "advantage",
+  chartPoints: null,
   boardTheme: "emerald",
   isAnalyzing: false,
   analysisRunId: 0,
@@ -165,7 +185,13 @@ const state = {
   variationUci: [],
   variationMoves: [],
   variationEvalRunId: 0,
+  // The latest evaluation of the variation position, so a threat can be judged against it.
+  variationEval: null,
   boardEpoch: 0,
+  // The position on the board, and the arrows and circles drawn on each position (keyed by placement and turn).
+  shownFen: null,
+  shapes: new Map(),
+  showThreat: false,
 
   drillActive: false,
   drillPlies: [],
@@ -188,6 +214,31 @@ const state = {
 
 let board = null;
 let engine = null;
+let enginePool = null;
+
+/** Dark text on a grade color, or white where dark text would fall below 4.5:1 contrast (WCAG AA). */
+function badgeTextColor(hex) {
+  const channel = (offset) => {
+    const value = parseInt(hex.slice(offset, offset + 2), 16) / 255;
+    return value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+  };
+  const luminance = 0.2126 * channel(1) + 0.7152 * channel(3) + 0.0722 * channel(5);
+  // #11100e, the page's darkest text, has a relative luminance of about 0.0055.
+  return (luminance + 0.05) / (0.0055 + 0.05) >= 4.5 ? "#11100e" : "#ffffff";
+}
+
+/** A bug-report link with the version, browser and engine count. It contains no game data. */
+function reportUrl(error = "", engines = null) {
+  return problemReportUrl({
+    version: extension?.runtime?.getManifest?.().version, userAgent: navigator.userAgent, engines, error,
+  });
+}
+
+function stopReviewEngines() {
+  enginePool?.abort();
+  enginePool = null;
+  engine?.abort();
+}
 
 const dom = {
   openingTag: document.getElementById("openingTag"),
@@ -224,6 +275,21 @@ const dom = {
   boardThemeWrap: document.getElementById("boardThemeWrap"),
   boardEl: document.getElementById("board"),
   squareBadgeOverlay: document.getElementById("squareBadgeOverlay"),
+  shapeLayer: document.getElementById("shapeLayer"),
+  threatBtn: document.getElementById("threatBtn"),
+  threatBanner: document.getElementById("threatBanner"),
+  threatText: document.getElementById("threatText"),
+  threatLine: document.getElementById("threatLine"),
+  threatEval: document.getElementById("threatEval"),
+  shortcutsBtn: document.getElementById("shortcutsBtn"),
+  shortcutsBackdrop: document.getElementById("shortcutsBackdrop"),
+  closeShortcutsBtn: document.getElementById("closeShortcutsBtn"),
+  linePreview: document.getElementById("linePreview"),
+  linePreviewBoard: document.getElementById("linePreviewBoard"),
+  linePreviewLabel: document.getElementById("linePreviewLabel"),
+  copyPgnBtn: document.getElementById("copyPgnBtn"),
+  downloadPgnBtn: document.getElementById("downloadPgnBtn"),
+  exportStatus: document.getElementById("exportStatus"),
 
   variationBanner: document.getElementById("variationBanner"),
   variationMovesText: document.getElementById("variationMovesText"),
@@ -287,7 +353,10 @@ const dom = {
   guidedNextBtn: document.getElementById("guidedNextBtn"),
 
   evalGraphSvg: document.getElementById("evalGraphSvg"),
+  evalGraphWrap: document.getElementById("evalGraphWrap"),
   evalTooltip: document.getElementById("evalTooltip"),
+  chartTabs: document.getElementById("chartTabs"),
+  chartTitle: document.getElementById("chartTitle"),
   keyMomentsWrap: document.getElementById("keyMomentsWrap"),
   keyMomentsList: document.getElementById("keyMomentsList"),
   openingStudy: document.getElementById("openingStudy"),
@@ -339,6 +408,8 @@ const dom = {
 
   settingsBackdrop: document.getElementById("settingsBackdrop"),
   settingsDrawer: document.getElementById("settingsDrawer"),
+  reportProblemLink: document.getElementById("reportProblemLink"),
+  reportErrorLink: document.getElementById("reportErrorLink"),
   closeSettingsBtn: document.getElementById("closeSettingsBtn"),
   themeChips: Array.from(document.querySelectorAll(".theme-chip")),
   aiPresetSelect: document.getElementById("aiPresetSelect"),
@@ -364,8 +435,10 @@ const dom = {
 function applyBoardTheme(themeName) {
   const valid = ["emerald", "slate", "walnut"].includes(themeName) ? themeName : "emerald";
   state.boardTheme = valid;
-  dom.boardThemeWrap.classList.remove("theme-emerald", "theme-slate", "theme-walnut");
-  dom.boardThemeWrap.classList.add(`theme-${valid}`);
+  for (const element of [dom.boardThemeWrap, dom.linePreview]) {
+    element.classList.remove("theme-emerald", "theme-slate", "theme-walnut");
+    element.classList.add(`theme-${valid}`);
+  }
   dom.themeChips.forEach((chip) => {
     chip.classList.toggle("active", chip.dataset.theme === valid);
   });
@@ -515,6 +588,14 @@ function recordedRating(gameRating, pgnRating) {
   return { rating: null, ratingSource: "" };
 }
 
+/** Put a position on the board. Every position change goes through here so drawings and the threat follow it. */
+function showPosition(fen, animated = true) {
+  state.shownFen = fen;
+  board.setPosition(fen, animated);
+  renderShapeLayer();
+  if (state.showThreat) refreshThreat();
+}
+
 function initBoard(orientation = "w") {
   if (board) {
     board.destroy();
@@ -566,6 +647,7 @@ function updateSquareBadgeOverlay(ply) {
   el.textContent = cls.symbol;
   el.title = cls.label;
   el.style.background = cls.color;
+  el.style.color = badgeTextColor(cls.color);
   el.style.left = `${(col + 1) * 12.5}%`;
   el.style.top = `${row * 12.5}%`;
   el.classList.remove("hidden");
@@ -613,7 +695,7 @@ function handleBoardInput(event) {
     // Let the player choose the piece. Underpromotion can be the only winning move.
     const epoch = state.boardEpoch;
     const promoting = requestPromotion(board, activeChess, from, to, (chosen) => {
-      if (!chosen || !commitBoardMove(activeChess, chosen)) board.setPosition(activeChess.fen(), true);
+      if (!chosen || !commitBoardMove(activeChess, chosen)) showPosition(activeChess.fen(), true);
     }, () => epoch === state.boardEpoch);
     return promoting || commitBoardMove(activeChess, { from, to });
   }
@@ -636,7 +718,7 @@ function commitBoardMove(activeChess, move) {
   playSound(moveObj.san.includes("+") ? "check" : moveObj.captured ? "capture" : "move");
   const uci = moveToUci(moveObj);
   // Castling, en passant, and promotion change more than the dragged piece.
-  board.setPosition(activeChess.fen(), true);
+  showPosition(activeChess.fen(), true);
 
   if (state.drillActive) {
     const epoch = state.boardEpoch;
@@ -685,14 +767,18 @@ async function evaluateVariationPosition() {
     board.removeArrows();
     return;
   }
-  if (!engine || state.isAnalyzing) {
+  if (!engine) {
     dom.variationEvalTag.textContent = withRule("");
     return;
   }
   dom.variationEvalTag.textContent = withRule("Eval...");
   try {
-    const res = await analyzeGamePosition(engine, position, 12);
-    if (runId !== state.variationEvalRunId || !state.exploring) return;
+    // During a review this runs on the next free engine, ahead of the review's queue.
+    const res = await interactiveSearch((searchEngine) => (
+      runId === state.variationEvalRunId ? analyzeGamePosition(searchEngine, position, 12) : null));
+    if (!res || runId !== state.variationEvalRunId || !state.exploring) return;
+    state.variationEval = { fen: position.fen, eval: res.eval };
+    if (state.showThreat && state.shownFen === position.fen) refreshThreat();
     dom.variationEvalTag.textContent = withRule(formatEval(res.eval));
     updateEvalBarFromData(res);
     board.removeArrows();
@@ -859,7 +945,7 @@ function playVariationOnBoard(basePly, pvMoves, arrow, prefix = []) {
   board.removeArrows();
   board.removeMarkers(MARKER_TYPE.frameDanger);
   dom.squareBadgeOverlay.classList.add("hidden");
-  board.setPosition(sim.fen(), true);
+  showPosition(sim.fen(), true);
   updateCapturedPieces(sim.fen());
   renderVariationBanner();
 
@@ -878,7 +964,7 @@ function playVariationOnBoard(basePly, pvMoves, arrow, prefix = []) {
       if (!m) return;
       state.variationUci.push(moveToUci(m));
       state.variationMoves.push(m.san);
-      board.setPosition(sim.fen(), true);
+      showPosition(sim.fen(), true);
       board.removeArrows();
       board.addArrow(arrow, m.from, m.to);
       updateCapturedPieces(sim.fen());
@@ -916,7 +1002,7 @@ function loadGameFromPayload(payload) {
   state.deepChecks.clear();
   clearPerformanceContext();
   dom.trainingNotice.classList.add("hidden");
-  if (state.isAnalyzing) engine?.abort();
+  if (state.isAnalyzing) stopReviewEngines();
   state.analysisRunId++;
   state.isAnalyzing = false;
 
@@ -951,6 +1037,9 @@ function loadGameFromPayload(payload) {
   resetDrillProgress();
   state.coachCache.clear();
   state.humanForecasts.clear();
+  state.shapes.clear();
+  state.variationEval = null;
+  lineRegistry.clear();
 
   dom.keyMomentsWrap.classList.add("hidden");
   dom.phaseStrip.classList.add("hidden");
@@ -1084,12 +1173,14 @@ async function runFullAnalysis() {
 
   const runId = ++state.analysisRunId;
   state.isAnalyzing = true;
+  updateExportButtons();
   const depth = Number(dom.depthSelect.value) || 16;
 
   cancelDeepCheck();
   state.deepChecks.clear();
   clearPerformanceContext();
   dom.progressBarWrap.classList.remove("hidden");
+  dom.reportErrorLink.classList.add("hidden");
   dom.progressFill.style.width = "0%";
   dom.progressLabel.textContent = "Loading Stockfish 19…";
   dom.reanalyzeBtn.disabled = true;
@@ -1105,58 +1196,136 @@ async function runFullAnalysis() {
   updateDrillBadgeCount();
   goToPly(state.currentPly, false);
 
+  state.comparisons = new Array(state.positions.length).fill(null);
+  state.initialRoots = new Array(state.positions.length).fill(null);
+  state.pendingPlies.clear();
+
+  const stale = () => runId !== state.analysisRunId;
+  const decisions = state.positions.length - 1;
+  let pool = null;
+  let quickDone = 0;
+  let deepTotal = 0;
+  let renderQueued = false;
+  const touched = new Set();
+  const showProgress = () => {
+    const size = pool?.size ?? 1;
+    const engines = `${size} ${size === 1 ? "engine" : "engines"}`;
+    if (quickDone === 0) {
+      dom.progressLabel.textContent = `Loading Stockfish 19 · ${engines}…`;
+    } else if (quickDone < decisions) {
+      dom.progressLabel.textContent = `Stockfish 19 · quick pass ${quickDone} of ${decisions} moves · depth ${depth} · ${engines}`;
+      dom.progressFill.style.width = `${Math.round(quickDone / Math.max(1, decisions) * 50)}%`;
+    } else {
+      const checked = deepTotal - state.pendingPlies.size;
+      dom.progressLabel.textContent = `Stockfish 19 · checking close calls deeper · ${checked} of ${deepTotal} · ${engines}`;
+      dom.progressFill.style.width = `${50 + Math.round(checked / Math.max(1, deepTotal) * 50)}%`;
+    }
+  };
+  // Results arrive out of order from several engines; draw them at most every 100 ms.
+  // A timer, unlike an animation frame, keeps the progress current in a background tab.
+  const queueRender = (...plies) => {
+    for (const ply of plies) touched.add(ply);
+    if (renderQueued) return;
+    renderQueued = true;
+    setTimeout(() => {
+      renderQueued = false;
+      if (stale()) return;
+      // The finished review sets its own label.
+      if (state.isAnalyzing) showProgress();
+      updateScoreboard();
+      renderEvalGraph();
+      renderMoveList();
+      renderKeyMoments();
+      const current = state.currentPly;
+      if (touched.has(current) || touched.has(current + 1)) {
+        // A variation on the board keeps its own evaluation and arrows.
+        if (!state.exploring) {
+          updateEvalBar(current);
+          updateArrowsForPly(current);
+        }
+        updateSquareBadgeOverlay(current);
+        renderCoachCard(current);
+      }
+      touched.clear();
+    }, 100);
+  };
+  const rescore = (ply) => {
+    const comparison = state.comparisons[ply];
+    if (!comparison) return;
+    const before = state.positions[ply - 1];
+    const pos = state.positions[ply];
+    // Miss depends on the opponent's previous loss, so a move is scored again when that loss changes.
+    const prevOpponentWinLoss = state.moveReviews[ply - 1]?.winLoss ?? 0;
+    const { root } = comparison;
+    const review = scoreDecision(before, pos, comparison, prevOpponentWinLoss);
+    state.moveReviews[ply] = {
+      ...review,
+      provisional: state.pendingPlies.has(ply),
+      book: bookForReview(pos.terminal ? null : state.bookMoves[ply], review),
+      peerDifficulty: peerDecisionPrediction(before, state.initialRoots[ply - 1], pos.move.color),
+      coachReply: coachEvidence(pos, review),
+      tactics: reviewTactics({
+        fenEarlier: state.positions[ply - 2]?.fen, fenBefore: before.fen, fenAfter: pos.fen, playedUci: pos.move.uci, grade: review.classification.key,
+        playedPv: review.playedPv, bestPv: root.pv,
+      }),
+      reasons: ["inaccuracy", "mistake", "miss", "blunder"].includes(review.classification.key) ? explainError({
+        fenEarlier: state.positions[ply - 2]?.fen, fenBefore: before.fen, fenAfter: pos.fen,
+        previousUci: before.move?.uci, previousCaptured: before.move?.captured, playedUci: pos.move.uci,
+        playedPv: review.playedPv, bestPv: root.pv, color: pos.move.color, phase: before.phase, winLoss: review.winLoss,
+      }) : null,
+      bestSan: pvToSan(before.fen, root.pv, 1),
+      pvSan: pvToSan(before.fen, root.pv),
+      pvEvalStr: formatEval(root.eval),
+      secondPvSan: pvToSan(before.fen, root.secondPv, 5),
+      secondEvalStr: root.secondEval ? formatEval(root.secondEval) : "",
+      playedPvSan: pvToSan(before.fen, review.playedPv),
+    };
+    state.coachCache.delete(ply);
+  };
+  const setComparison = (ply, comparison) => {
+    state.comparisons[ply] = comparison;
+    state.evals[ply - 1] = comparison.root;
+    rescore(ply);
+    rescore(ply + 1);
+    queueRender(ply - 1, ply, ply + 1);
+  };
+
   try {
     engine ??= new StockfishEngine(STOCKFISH_WORKER_PATH);
-    await engine.startNewGame();
+    const size = enginePoolSize({ cores: navigator.hardwareConcurrency, memoryGB: navigator.deviceMemory });
+    pool = enginePool = new EnginePool(() => new StockfishEngine(STOCKFISH_WORKER_PATH), size, engine);
+    showProgress();
 
-    const total = state.positions.length;
-    for (let i = 0; i < total; i++) {
-      if (runId !== state.analysisRunId) return;
-      const pos = state.positions[i];
-      dom.progressLabel.textContent = `Stockfish 19 · position ${i + 1} of ${total} · depth target ${depth}`;
-
-      const evalResult = await analyzeGamePosition(engine, pos, depth);
-      if (runId !== state.analysisRunId) return;
-      state.evals[i] = evalResult;
-      if (i >= 1) {
-        const before = state.positions[i - 1];
-        const prevOpponentWinLoss = state.moveReviews[i - 1]?.winLoss ?? 0;
-        const initialRoot = state.evals[i - 1];
-        const compared = await analyzeDecision(engine, before, pos, depth, initialRoot, prevOpponentWinLoss);
-        if (runId !== state.analysisRunId) return;
-        const { root } = compared;
-        state.evals[i - 1] = root;
-        const review = scoreDecision(before, pos, compared, prevOpponentWinLoss);
-        state.moveReviews[i] = {
-          ...review,
-          book: bookForReview(pos.terminal ? null : state.bookMoves[i], review),
-          peerDifficulty: peerDecisionPrediction(before, initialRoot, pos.move.color),
-          coachReply: coachEvidence(pos, review),
-          bestSan: pvToSan(before.fen, root.pv, 1),
-          pvSan: pvToSan(before.fen, root.pv),
-          pvEvalStr: formatEval(root.eval),
-          secondPvSan: pvToSan(before.fen, root.secondPv, 5),
-          secondEvalStr: root.secondEval ? formatEval(root.secondEval) : "",
-          playedPvSan: pvToSan(before.fen, review.playedPv),
-        };
-      }
-      dom.progressFill.style.width = `${Math.round((i + 1) / total * 100)}%`;
-
-      if (i % 2 === 0 || i === total - 1) {
-        updateScoreboard();
-        renderEvalGraph();
-        renderMoveList();
-        renderKeyMoments();
-        if (state.currentPly === i || state.currentPly === i - 1) {
-          updateEvalBar(state.currentPly);
-          updateArrowsForPly(state.currentPly);
-          updateSquareBadgeOverlay(state.currentPly);
-          renderCoachCard(state.currentPly);
+    await runReview({
+      positions: state.positions,
+      depth,
+      pool,
+      isCancelled: stale,
+      onRoot: (index, root) => {
+        state.initialRoots[index] = root;
+        // A move's comparison replaces the position's evaluation; the final position keeps its own search.
+        if (!state.comparisons[index + 1]) state.evals[index] = root;
+        queueRender(index);
+      },
+      onQuick: (ply, quick) => {
+        quickDone++;
+        if (quick.needsRefinement) {
+          deepTotal++;
+          state.pendingPlies.add(ply);
         }
-      }
-    }
+        setComparison(ply, quick.comparison);
+      },
+      onFinal: (ply, comparison) => {
+        if (!state.pendingPlies.delete(ply)) return;
+        setComparison(ply, comparison);
+      },
+    });
+    if (stale()) return;
 
+    pool.close();
+    if (enginePool === pool) enginePool = null;
     state.isAnalyzing = false;
+    dom.progressFill.style.width = "100%";
     dom.progressLabel.textContent = "Stockfish 19 review complete";
     setTimeout(() => {
       if (runId === state.analysisRunId) {
@@ -1170,15 +1339,26 @@ async function runFullAnalysis() {
     renderMoveList();
     renderKeyMoments();
     updateDrillBadgeCount();
-    goToPly(state.currentPly, false);
+    if (state.exploring) {
+      // Leave a variation the player is exploring on the board; refresh the move's card around it.
+      renderCoachCard(state.currentPly);
+      updateGuidedCta(state.currentPly);
+    } else {
+      goToPly(state.currentPly, false);
+    }
     recordReviewedGame(runId, depth);
   } catch (err) {
     if (runId !== state.analysisRunId) return;
+    pool?.abort();
+    if (enginePool === pool) enginePool = null;
     dom.progressLabel.textContent = `Engine error: ${err.message}`;
+    dom.reportErrorLink.href = reportUrl(err.message, pool?.size);
+    dom.reportErrorLink.classList.remove("hidden");
   } finally {
     if (runId === state.analysisRunId) {
       state.isAnalyzing = false;
       dom.reanalyzeBtn.disabled = false;
+      updateExportButtons();
     }
   }
 }
@@ -1186,6 +1366,7 @@ async function runFullAnalysis() {
 function goToPly(ply, animate = true, withSound = false) {
   if (!state.positions.length) return;
   stopBestLineAnimation();
+  hideLinePreview();
   const clamped = Math.max(0, Math.min(state.positions.length - 1, ply));
   if (clamped !== state.currentPly) cancelDeepCheck();
   state.currentPly = clamped;
@@ -1200,7 +1381,7 @@ function goToPly(ply, animate = true, withSound = false) {
 
   const pos = state.positions[clamped];
   if (board) {
-    board.setPosition(pos.fen, animate);
+    showPosition(pos.fen, animate);
     board.removeMarkers(MARKER_TYPE.square);
     board.removeMarkers(MARKER_TYPE.circle);
     if (pos.move && !state.drillActive) {
@@ -1287,7 +1468,8 @@ function updateEvalBar(ply) {
 }
 
 function updateArrowsForPly(ply) {
-  if (!board) return;
+  // A variation draws its own arrows; the game move's arrows return when it ends.
+  if (!board || state.exploring) return;
   board.removeArrows();
   board.removeMarkers(MARKER_TYPE.frameDanger);
 
@@ -1301,6 +1483,14 @@ function updateArrowsForPly(ply) {
     const { from, to, square } = review.coachReply;
     board.addArrow(ARROW_COACH_REPLY, from, to);
     board.addMarker(MARKER_TYPE.frameDanger, square);
+    // When the reply is a tactic, show what it attacks.
+    const allowed = review.tactics?.allowed;
+    if (allowed && allowed.san === review.coachReply.san) {
+      for (const [start, end] of tacticArrows(allowed)) board.addArrow(ARROW_TACTIC, start, end);
+      for (const { square: target } of allowed.targets) {
+        if (target !== square) board.addMarker(MARKER_TYPE.frameDanger, target);
+      }
+    }
     return;
   }
 
@@ -1425,6 +1615,7 @@ function renderCoachCard(ply) {
     dom.coachCard.style.borderLeftColor = "#81b64c";
     dom.moveBadge.className = "class-badge badge-neutral";
     dom.moveBadge.style.background = "";
+    dom.moveBadge.style.color = "";
     dom.moveBadge.textContent = "•";
     dom.coachMotifTag.classList.add("hidden");
     dom.moveHeadline.textContent = state.gameMeta?.opening || "Game Review Ready";
@@ -1447,6 +1638,7 @@ function renderCoachCard(ply) {
     dom.coachCard.style.borderLeftColor = "#55514a";
     dom.moveBadge.className = "class-badge badge-neutral";
     dom.moveBadge.style.background = "";
+    dom.moveBadge.style.color = "";
     dom.moveBadge.textContent = "…";
     dom.coachMotifTag.classList.add("hidden");
     dom.moveHeadline.textContent = `${movePrefix} ${posAfter.move.san}`;
@@ -1475,6 +1667,7 @@ function renderCoachCard(ply) {
   dom.coachCard.style.borderLeftColor = cls.color;
   dom.moveBadge.className = "class-badge";
   dom.moveBadge.style.background = cls.color;
+  dom.moveBadge.style.color = badgeTextColor(cls.color);
   dom.moveBadge.textContent = cls.symbol;
   dom.moveBadge.title = review.book ? `Book · Stockfish grade ${review.classification.label}` : cls.label;
   dom.moveHeadline.textContent = `${movePrefix} ${insight.title}`;
@@ -1504,21 +1697,25 @@ function renderCoachCard(ply) {
   }
 
   renderDifficulty(ply, review);
-  const searchEvidence = { single: "One comparison", stable: "Two depths agree", borderline: "Grade uncertain", forced: "Forced move" };
+  const searchEvidence = {
+    single: "One comparison", stable: "Two depths agree", borderline: "Grade uncertain", forced: "Forced move",
+    pending: "Checking deeper…",
+  };
   dom.gradeConfidenceText.textContent = `Depth ${review.depth} · ${searchEvidence[review.searchConfidence]}`;
   dom.gradeConfidenceText.classList.remove("hidden");
 
   if (review.pvSan) {
+    const root = state.evals[ply - 1];
     dom.pvLinesBox.classList.remove("hidden");
     dom.pvLineWrap.classList.remove("hidden");
     dom.pvEval1.textContent = review.pvEvalStr || "";
-    dom.pvLineText.textContent = review.pvSan;
+    renderLineMoves(dom.pvLineText, "pv1", ply - 1, lineSteps(posBefore.fen, root?.pv, 6));
     dom.showBestLineBtn.classList.remove("hidden");
 
     if (review.secondPvSan) {
       dom.pvLine2Wrap.classList.remove("hidden");
       dom.pvEval2.textContent = review.secondEvalStr || "";
-      dom.pvLine2Text.textContent = review.secondPvSan;
+      renderLineMoves(dom.pvLine2Text, "pv2", ply - 1, lineSteps(posBefore.fen, root?.secondPv, 5));
     } else {
       dom.pvLine2Wrap.classList.add("hidden");
     }
@@ -1756,8 +1953,10 @@ function updateScoreboard() {
   ]) {
     const reviews = reviewsByColor[color];
     const uncertain = reviews.filter(({ searchConfidence }) => searchConfidence === "borderline").length;
+    const checking = reviews.filter(({ provisional }) => provisional).length;
     const scores = `${count} scored ${count === 1 ? "decision" : "decisions"}`;
-    countEl.textContent = `${scores}${uncertain ? ` · ${uncertain} uncertain ${uncertain === 1 ? "grade" : "grades"}` : ""}`;
+    countEl.textContent = `${scores}${uncertain ? ` · ${uncertain} uncertain ${uncertain === 1 ? "grade" : "grades"}` : ""}` +
+      `${checking ? ` · ${checking} being checked deeper` : ""}`;
     const quality = computeDecisionQuality(reviews);
     qualityEl.textContent = quality ? `Decision quality ${quality.score.toFixed(1)}` : "";
     peakEl.textContent = quality ? `Biggest loss ${quality.biggestLoss.toFixed(0)} pts` : "";
@@ -1783,6 +1982,36 @@ function updateScoreboard() {
   }
 }
 
+/** A count that jumps to that side's next move of this grade when clicked, like Lichess's summary. */
+function countCell(key, color, count, label) {
+  const cell = document.createElement("td");
+  cell.className = "num";
+  if (!count) {
+    cell.textContent = "0";
+    return cell;
+  }
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "count-jump";
+  button.textContent = String(count);
+  const side = color === "w" ? "White" : "Black";
+  button.setAttribute("aria-label", `Go to ${side}'s next ${label} (${count} in total)`);
+  button.title = `Go to ${side}'s next ${label}`;
+  button.addEventListener("click", () => {
+    const plies = [];
+    for (let ply = 1; ply < state.positions.length; ply++) {
+      const review = state.moveReviews[ply];
+      if (review && state.positions[ply].move?.color === color && displayClassification(review).key === key) plies.push(ply);
+    }
+    const next = plies.find((ply) => ply > state.currentPly) ?? plies[0];
+    if (next === undefined) return;
+    stopAutoplay();
+    goToPly(next, true, true);
+  });
+  cell.appendChild(button);
+  return cell;
+}
+
 function renderBreakdownTable(counts) {
   const frag = document.createDocumentFragment();
   for (const key of CLASSIFICATION_ORDER) {
@@ -1796,6 +2025,7 @@ function renderBreakdownTable(counts) {
     const dot = document.createElement("span");
     dot.className = "mini-dot";
     dot.style.background = cls.color;
+    dot.style.color = badgeTextColor(cls.color);
     dot.textContent = cls.symbol;
 
     const nameSpan = document.createElement("span");
@@ -1806,13 +2036,8 @@ function renderBreakdownTable(counts) {
     cellSpan.appendChild(nameSpan);
     tdLabel.appendChild(cellSpan);
 
-    const tdWhite = document.createElement("td");
-    tdWhite.className = "num";
-    tdWhite.textContent = String(counts.w[key]);
-
-    const tdBlack = document.createElement("td");
-    tdBlack.className = "num";
-    tdBlack.textContent = String(counts.b[key]);
+    const tdWhite = countCell(key, "w", counts.w[key], cls.label);
+    const tdBlack = countCell(key, "b", counts.b[key], cls.label);
 
     tr.appendChild(tdLabel);
     tr.appendChild(tdWhite);
@@ -1825,26 +2050,76 @@ function renderBreakdownTable(counts) {
 function renderMoveList() {
   const frag = document.createDocumentFragment();
   const totalPlies = state.positions.length - 1;
+  const filler = () => {
+    const span = document.createElement("span");
+    span.className = "move-filler";
+    span.textContent = "…";
+    return span;
+  };
 
-  let ply = 1;
-  while (ply <= totalPlies) {
+  // Two moves per row, as on a scoresheet. A comment ends its row, as in Lichess's analysis.
+  let row = null;
+  for (let ply = 1; ply <= totalPlies; ply++) {
     const move = state.positions[ply].move;
-    const row = document.createElement("div");
-    row.className = "move-row";
-    const numEl = document.createElement("span");
-    numEl.className = "move-num";
-    numEl.textContent = `${move.number}.`;
-    row.appendChild(numEl);
-    for (const color of ["w", "b"]) {
-      const next = state.positions[ply]?.move;
-      row.appendChild(next?.color === color && next.number === move.number
-        ? createMoveCell(ply++) : document.createElement("span"));
+    if (move.color === "w" || !row) {
+      row = document.createElement("div");
+      row.className = "move-row";
+      const numEl = document.createElement("span");
+      numEl.className = "move-num";
+      numEl.textContent = `${move.number}.`;
+      row.appendChild(numEl);
+      if (move.color === "b") row.appendChild(filler());
+      frag.appendChild(row);
     }
-    frag.appendChild(row);
+    row.appendChild(createMoveCell(ply));
+    const comment = moveListComment(ply);
+    if (comment) {
+      if (move.color === "w") row.appendChild(filler());
+      frag.appendChild(comment);
+      row = null;
+    } else if (move.color === "b") {
+      row = null;
+    }
   }
 
+  if (previewButton && dom.moveList.contains(previewButton)) hideLinePreview();
   dom.moveList.replaceChildren(frag);
   highlightActiveMoveInList(state.currentPly);
+  updateExportButtons();
+}
+
+/** "Mistake. g4 was best." with the evaluation change and Stockfish's line, under a graded error. */
+function moveListComment(ply) {
+  const review = state.moveReviews[ply];
+  if (!review || review.book) return null;
+  const grade = review.classification.key;
+  if (!mistakeComment(grade, review.bestSan)) return null;
+  const cls = displayClassification(review);
+  const comment = document.createElement("div");
+  comment.className = "move-comment";
+  comment.classList.toggle("is-provisional", Boolean(review.provisional));
+  comment.style.setProperty("--comment-color", cls.color);
+
+  const text = document.createElement("div");
+  const word = document.createElement("span");
+  word.className = "move-comment-grade";
+  word.textContent = `${cls.label}.`;
+  text.append(word, review.bestSan ? ` ${review.bestSan} was best.` : "");
+  const swing = document.createElement("span");
+  swing.className = "move-comment-swing";
+  swing.textContent = `${formatEval(state.evals[ply - 1]?.eval)} → ${formatEval(review.playedEval)}`;
+  swing.title = "Evaluation before and after the move, from White's side";
+  text.append(swing);
+  comment.append(text);
+
+  const steps = lineSteps(state.positions[ply - 1].fen, state.evals[ply - 1]?.pv, 6);
+  if (steps.length) {
+    const line = document.createElement("div");
+    line.className = "line-moves";
+    renderLineMoves(line, `list-${ply}`, ply - 1, steps);
+    comment.append(line);
+  }
+  return comment;
 }
 
 function createMoveCell(ply) {
@@ -1864,10 +2139,12 @@ function createMoveCell(ply) {
     const badge = document.createElement("span");
     badge.className = "move-cell-badge";
     badge.style.background = cls.color;
+    badge.style.color = badgeTextColor(cls.color);
     badge.textContent = cls.symbol;
-    badge.title = cls.label;
+    badge.title = rev.provisional ? `${cls.label} · checking deeper` : cls.label;
     badge.setAttribute("aria-hidden", "true");
-    btn.setAttribute("aria-label", `${pos.move.san}, ${cls.label}`);
+    btn.classList.toggle("is-provisional", Boolean(rev.provisional));
+    btn.setAttribute("aria-label", `${pos.move.san}, ${cls.label}${rev.provisional ? ", checking deeper" : ""}`);
     btn.appendChild(badge);
   }
 
@@ -1890,163 +2167,220 @@ function highlightActiveMoveInList(ply) {
   });
 }
 
+// Chart colors: White's side light, Black's side dark, the current move in orange.
+const CHART = {
+  white: "rgba(236, 233, 226, 0.9)", black: "rgba(0, 0, 0, 0.62)", line: "rgba(255, 255, 255, 0.62)",
+  center: "rgba(255, 255, 255, 0.2)", division: "rgba(255, 255, 255, 0.24)", label: "#a3a098",
+  current: "#e8923a", hover: "rgba(255, 255, 255, 0.5)", whiteBar: "rgba(236, 233, 226, 0.88)", blackBar: "#5b5750",
+};
+const CHART_MARKED = new Set(["inaccuracy", "mistake", "miss", "blunder", "brilliant", "great"]);
+let chartHoverPly = null;
+let chartScrubbing = false;
+
+/** The chart's size in CSS pixels, so dots and labels are drawn without stretching. */
+function chartSize() {
+  const box = dom.evalGraphSvg.getBoundingClientRect();
+  return { width: Math.max(120, Math.round(box.width) || 420), height: Math.max(60, Math.round(box.height) || 132) };
+}
+
+function chartTimes() {
+  return state.positions.length > 1 ? moveTimes(state.positions) : null;
+}
+
+function renderChartTabs() {
+  const hasTimes = Boolean(chartTimes());
+  dom.chartTabs.classList.toggle("hidden", !hasTimes);
+  // With both charts available, the tabs name the chart.
+  dom.chartTitle.classList.toggle("hidden", hasTimes);
+  if (!hasTimes) state.chartMode = "advantage";
+  for (const button of dom.chartTabs.querySelectorAll("[data-chart]")) {
+    const active = button.dataset.chart === state.chartMode;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-selected", String(active));
+  }
+  dom.chartTitle.textContent = state.chartMode === "times" ? "Move Times" : "Advantage";
+}
+
 function renderEvalGraph() {
+  renderChartTabs();
   const svg = dom.evalGraphSvg;
-  const W = 420;
-  const H = 112;
-  const midY = H / 2;
+  const { width: W, height: H } = chartSize();
+  const mid = H / 2;
   const n = state.positions.length;
-
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
   const frag = document.createDocumentFragment();
-
+  frag.appendChild(createSvgEl("line", { x1: 0, y1: mid, x2: W, y2: mid, stroke: CHART.center, "stroke-width": 1 }));
   if (n <= 1) {
-    frag.appendChild(
-      createSvgEl("line", {
-        x1: 0,
-        y1: midY,
-        x2: W,
-        y2: midY,
-        stroke: "#3a3732",
-        "stroke-dasharray": "4 3",
-      })
-    );
     svg.replaceChildren(frag);
     return;
   }
+  const step = W / (n - 1);
+  const xFor = (ply) => ply * step;
 
-  const defs = createSvgEl("defs");
-  const whiteGrad = createSvgEl("linearGradient", { id: "clgrWhiteGrad", x1: "0", y1: "0", x2: "0", y2: "1" });
-  whiteGrad.appendChild(createSvgEl("stop", { offset: "0%", "stop-color": "#f2f0ea", "stop-opacity": "0.94" }));
-  whiteGrad.appendChild(createSvgEl("stop", { offset: "100%", "stop-color": "#c9c6be", "stop-opacity": "0.78" }));
-  defs.appendChild(whiteGrad);
-  frag.appendChild(defs);
-
-  const xFor = (i) => (i / (n - 1)) * W;
-  const yFor = (winWhite) => H - (Math.max(0, Math.min(100, winWhite)) / 100) * H;
-
-  const pts = [];
-  for (let i = 0; i < n; i++) {
-    const win = state.evals[i] ? state.evals[i].winWhite : 50;
-    pts.push({ i, x: xFor(i), y: yFor(win), win });
+  // Phase divisions, labelled at the top like a scoresheet's sections.
+  const divisions = phaseDivisions(state.positions);
+  for (const [phase, ply] of [["Middlegame", divisions.middlegame], ["Endgame", divisions.endgame]]) {
+    if (ply === null) continue;
+    const x = xFor(ply);
+    frag.appendChild(createSvgEl("line", {
+      x1: x, y1: 0, x2: x, y2: H, stroke: CHART.division, "stroke-width": 1, "stroke-dasharray": "3 3",
+    }));
+    const label = createSvgEl("text", { x: Math.min(x + 4, W - 4), y: 11, fill: CHART.label, "font-size": 9.5,
+      "text-anchor": x + 60 > W ? "end" : "start", class: "chart-label" });
+    label.textContent = phase;
+    frag.appendChild(label);
   }
 
-  const linePath = pts
-    .map((p, idx) => `${idx === 0 ? "M" : "L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`)
-    .join(" ");
-  const whiteArea = `${linePath} L${W},${H} L0,${H} Z`;
-  const blackArea = `M0,0 L${W},0 L${W},${H} L0,${H} Z`;
-
-  frag.appendChild(createSvgEl("path", { d: blackArea, fill: "#1b1a17" }));
-  frag.appendChild(createSvgEl("path", { d: whiteArea, fill: "url(#clgrWhiteGrad)" }));
-  frag.appendChild(
-    createSvgEl("line", {
-      x1: 0,
-      y1: midY,
-      x2: W,
-      y2: midY,
-      stroke: "rgba(255,255,255,0.22)",
-      "stroke-width": 1,
-      "stroke-dasharray": "3 3",
-    })
-  );
-  frag.appendChild(
-    createSvgEl("path", {
-      d: linePath,
-      fill: "none",
-      stroke: "#81b64c",
-      "stroke-width": 1.6,
-    })
-  );
-
-  const curPt = pts[state.currentPly] || pts[0];
-  frag.appendChild(
-    createSvgEl("line", {
-      x1: curPt.x.toFixed(1),
-      y1: 0,
-      x2: curPt.x.toFixed(1),
-      y2: H,
-      stroke: "#26c6da",
-      "stroke-width": 1.5,
-      "stroke-opacity": "0.85",
-    })
-  );
-
-  for (let i = 1; i < n; i++) {
-    const rev = state.moveReviews[i];
-    if (!rev) continue;
-    const k = rev.classification.key;
-    if (k === "blunder" || k === "miss" || k === "mistake" || k === "brilliant" || k === "great") {
-      const color = rev.classification.color;
-      const r = k === "blunder" ? 3.8 : 3.0;
-      frag.appendChild(
-        createSvgEl("circle", {
-          cx: pts[i].x.toFixed(1),
-          cy: pts[i].y.toFixed(1),
-          r,
-          fill: color,
-          stroke: "#11100e",
-          "stroke-width": 1.2,
-        })
-      );
+  let points;
+  if (state.chartMode === "times") {
+    points = drawMoveTimes(frag, chartTimes(), { W, H, mid, step, xFor });
+  } else {
+    // Lichess's centipawn curve, gentler than Stockfish's win-draw-loss estimate, keeps large advantages readable.
+    points = advantagePoints(state.evals.map((entry) => entry ? evalToWinWhite(entry.eval) : undefined), n, W, H);
+    const defs = createSvgEl("defs");
+    const clip = (id, y, height) => {
+      const path = createSvgEl("clipPath", { id });
+      path.appendChild(createSvgEl("rect", { x: 0, y, width: W, height }));
+      defs.appendChild(path);
+    };
+    clip("chartAbove", 0, mid);
+    clip("chartBelow", mid, H - mid);
+    frag.appendChild(defs);
+    const area = areaPath(points, mid);
+    frag.appendChild(createSvgEl("path", { d: area, fill: CHART.white, "clip-path": "url(#chartAbove)" }));
+    frag.appendChild(createSvgEl("path", { d: area, fill: CHART.black, "clip-path": "url(#chartBelow)" }));
+    frag.appendChild(createSvgEl("path", { d: linePath(points), fill: "none", stroke: CHART.line, "stroke-width": 1.2,
+      "stroke-linejoin": "round" }));
+    for (let ply = 1; ply < n; ply++) {
+      const review = state.moveReviews[ply];
+      if (!review || !CHART_MARKED.has(review.classification.key)) continue;
+      frag.appendChild(createSvgEl("circle", {
+        cx: points[ply].x.toFixed(1), cy: points[ply].y.toFixed(1), r: review.classification.key === "blunder" ? 3.6 : 3,
+        fill: review.classification.color, stroke: "#11100e", "stroke-width": 1,
+      }));
     }
   }
 
-  frag.appendChild(
-    createSvgEl("circle", {
-      cx: curPt.x.toFixed(1),
-      cy: curPt.y.toFixed(1),
-      r: 3.6,
-      fill: "#26c6da",
-      stroke: "#11100e",
-      "stroke-width": 1.4,
-    })
-  );
-
-  svg.replaceChildren(frag);
-}
-
-function getPlyFromGraphEvent(ev) {
-  const rect = dom.evalGraphSvg.getBoundingClientRect();
-  const ratio = Math.max(0, Math.min(1, (ev.clientX - rect.left) / rect.width));
-  return {
-    ply: Math.round(ratio * (state.positions.length - 1)),
-    ratio,
-    rect,
-  };
-}
-
-dom.evalGraphSvg.addEventListener("click", (ev) => {
-  if (state.positions.length <= 1) return;
-  stopAutoplay();
-  const { ply } = getPlyFromGraphEvent(ev);
-  goToPly(ply, true, true);
-});
-
-dom.evalGraphSvg.addEventListener("mousemove", (ev) => {
-  if (state.positions.length <= 1) return;
-  const { ply, ratio, rect } = getPlyFromGraphEvent(ev);
-  const pos = state.positions[ply];
-  const evData = state.evals[ply];
-  const rev = state.moveReviews[ply];
-
-  let text = "Start";
-  if (ply > 0 && pos?.move) {
-    const moveNum = pos.move.number;
-    const prefix = pos.move.color === "w" ? `${moveNum}.` : `${moveNum}...`;
-    const evalStr = evData ? formatEval(evData.eval) : "…";
-    const sym = rev ? ` ${displayClassification(rev).symbol}` : "";
-    text = `${prefix}${pos.move.san}${sym} (${evalStr})`;
+  // The current move.
+  const current = Math.min(state.currentPly, n - 1);
+  const x = xFor(current);
+  frag.appendChild(createSvgEl("line", { x1: x, y1: 0, x2: x, y2: H, stroke: CHART.current, "stroke-width": 1.5 }));
+  if (points?.[current]) {
+    frag.appendChild(createSvgEl("circle", { cx: x.toFixed(1), cy: points[current].y.toFixed(1), r: 3.8,
+      fill: CHART.current, stroke: "#11100e", "stroke-width": 1.2 }));
   }
+  const hover = createSvgEl("g", { id: "chartHover" });
+  frag.appendChild(hover);
+  svg.replaceChildren(frag);
+  state.chartPoints = points;
+  if (chartHoverPly !== null) showChartHover(chartHoverPly);
+}
 
-  dom.evalTooltip.textContent = text;
+/** Bars of time spent per move: White's up from the center, Black's down. Errors take their grade color. */
+function drawMoveTimes(frag, times, { W, H, mid, step, xFor }) {
+  const known = times.filter(Number.isFinite);
+  const longest = Math.max(1, ...known);
+  const room = mid - 6;
+  const width = Math.max(1, Math.min(10, step * 0.72));
+  const points = [{ ply: 0, x: 0, y: mid }];
+  for (let ply = 1; ply < state.positions.length; ply++) {
+    const seconds = times[ply];
+    const white = state.positions[ply].move.color === "w";
+    const height = Number.isFinite(seconds) ? Math.max(1, (seconds / longest) * room) : 0;
+    const y = white ? mid - height : mid;
+    const review = state.moveReviews[ply];
+    const error = review && ["inaccuracy", "mistake", "miss", "blunder"].includes(review.classification.key);
+    if (height) {
+      frag.appendChild(createSvgEl("rect", {
+        x: (xFor(ply) - width / 2).toFixed(1), y: y.toFixed(1), width: width.toFixed(1), height: height.toFixed(1),
+        fill: error ? review.classification.color : white ? CHART.whiteBar : CHART.blackBar, rx: Math.min(1.5, width / 3),
+      }));
+    }
+    points.push({ ply, x: xFor(ply), y: white ? mid - height : mid + height });
+  }
+  return points;
+}
+
+/** The hover crosshair, dot, and tooltip beside the point. */
+function showChartHover(ply) {
+  const group = document.getElementById("chartHover");
+  const point = state.chartPoints?.[ply];
+  if (!group || !point) return;
+  const { height: H, width: W } = chartSize();
+  group.replaceChildren(
+    createSvgEl("line", { x1: point.x, y1: 0, x2: point.x, y2: H, stroke: CHART.hover, "stroke-width": 1, "stroke-dasharray": "2 2" }),
+    createSvgEl("circle", { cx: point.x, cy: point.y, r: 3.4, fill: "#f3f1ec", stroke: "#11100e", "stroke-width": 1 }),
+  );
+  const position = state.positions[ply];
+  const review = state.moveReviews[ply];
+  // Annotation marks attach to the move as on a scoresheet: Nf3?!, Bxf7+!!
+  const mark = { brilliant: "!!", great: "!", inaccuracy: "?!", mistake: "?", blunder: "??", miss: "?" }[review?.classification.key] ?? "";
+  let detail;
+  if (state.chartMode === "times") {
+    const seconds = chartTimes()?.[ply];
+    const color = position.move?.color;
+    const left = color && position.practicalContext?.[color === "w" ? "whiteSeconds" : "blackSeconds"];
+    detail = ply ? `${formatSeconds(seconds)}${Number.isFinite(left) ? ` · ${formatSeconds(left)} left` : ""}` : "";
+  } else {
+    detail = state.evals[ply] ? formatEval(state.evals[ply].eval) : "…";
+  }
+  const label = ply ? `${moveLabel(position)}${mark}` : "Start";
+  dom.evalTooltip.textContent = detail ? `${label} · ${detail}` : label;
   dom.evalTooltip.classList.remove("hidden");
-  const leftPx = Math.max(6, Math.min(rect.width - 135, ratio * rect.width - 45));
-  dom.evalTooltip.style.left = `${leftPx}px`;
+  const tipWidth = dom.evalTooltip.offsetWidth || 110;
+  const left = point.x + 10 + tipWidth > W ? point.x - 10 - tipWidth : point.x + 10;
+  dom.evalTooltip.style.left = `${Math.max(4, left)}px`;
+  dom.evalTooltip.style.top = `${Math.max(4, Math.min(H - 26, point.y - 12))}px`;
+}
+
+function hideChartHover() {
+  chartHoverPly = null;
+  document.getElementById("chartHover")?.replaceChildren();
+  dom.evalTooltip.classList.add("hidden");
+}
+
+function chartPlyFromEvent(event) {
+  const box = dom.evalGraphSvg.getBoundingClientRect();
+  return plyAt((event.clientX - box.left) / box.width, state.positions.length);
+}
+
+// Click or drag along the chart to move through the game.
+dom.evalGraphSvg.addEventListener("pointerdown", (event) => {
+  if (state.positions.length <= 1 || event.button !== 0) return;
+  stopAutoplay();
+  chartScrubbing = true;
+  dom.evalGraphSvg.setPointerCapture(event.pointerId);
+  const ply = chartPlyFromEvent(event);
+  if (ply !== state.currentPly) goToPly(ply, false);
 });
 
-dom.evalGraphSvg.addEventListener("mouseleave", () => {
-  dom.evalTooltip.classList.add("hidden");
+dom.evalGraphSvg.addEventListener("pointermove", (event) => {
+  if (state.positions.length <= 1) return;
+  const ply = chartPlyFromEvent(event);
+  if (chartScrubbing && ply !== state.currentPly) goToPly(ply, false);
+  if (ply !== chartHoverPly) {
+    chartHoverPly = ply;
+    showChartHover(ply);
+  }
 });
+
+for (const type of ["pointerup", "pointercancel"]) {
+  dom.evalGraphSvg.addEventListener(type, () => { chartScrubbing = false; });
+}
+dom.evalGraphSvg.addEventListener("pointerleave", () => {
+  if (!chartScrubbing) hideChartHover();
+});
+
+dom.chartTabs.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-chart]");
+  if (!button || button.dataset.chart === state.chartMode) return;
+  state.chartMode = button.dataset.chart;
+  hideChartHover();
+  renderEvalGraph();
+});
+
+// Redraw at the new pixel size when the panel resizes.
+new ResizeObserver(() => renderEvalGraph()).observe(dom.evalGraphWrap);
 
 /**
  * "Retry Your Mistakes" Tabbed Trainer (Mistakes, Misses, and Blunders)
@@ -2216,7 +2550,7 @@ function rejectDrillAttempt(message, resetFen, stillCurrent) {
   dom.drillPromptText.textContent = message;
   setTimeout(() => {
     if (stillCurrent()) {
-      board.setPosition(resetFen, true);
+      showPosition(resetFen, true);
       state.drillChecking = false;
     }
   }, 420);
@@ -2241,7 +2575,7 @@ dom.drillRevealBtn.addEventListener("click", () => {
   const review = state.moveReviews[mistakePly];
   const bestFen = applyUciToFen(beforePos.fen, review.bestMoveUci);
   if (bestFen) {
-    board.setPosition(bestFen, true);
+    showPosition(bestFen, true);
   }
   markDrillSolved(`Best move was ${review.bestSan}.`, review.bestMoveUci, mistakePly);
 });
@@ -2315,7 +2649,10 @@ async function explainCurrentMoveWithAi() {
     if (!content || data.choices[0].finish_reason === "length") {
       throw new Error("The provider returned an incomplete explanation.");
     }
-    if (state.analysisRunId === analysisRunId && state.aiSettings === settings) state.coachCache.set(ply, content);
+    // A deeper check may have regraded the move while the provider answered.
+    if (state.analysisRunId === analysisRunId && state.aiSettings === settings && state.moveReviews[ply] === review) {
+      state.coachCache.set(ply, content);
+    }
     if (stillCurrent()) dom.aiCoachText.textContent = content;
   } catch (err) {
     if (stillCurrent()) dom.aiCoachText.textContent = `AI Coach unavailable. ${err.message} See the local review above.`;
@@ -2329,6 +2666,7 @@ dom.explainMistakeBtn.addEventListener("click", explainCurrentMoveWithAi);
 
 function openSettingsDrawer() {
   dom.settingsBackdrop.classList.remove("hidden");
+  dom.reportProblemLink.href = reportUrl();
   dom.settingsDrawer.classList.remove("hidden");
   dom.settingsSavedMsg.textContent = "";
 }
@@ -2554,6 +2892,7 @@ dom.flipBoardBtn.addEventListener("click", () => {
   renderPlayerStrips();
   updateEvalBar(state.currentPly);
   updateSquareBadgeOverlay(state.currentPly);
+  renderShapeLayer();
   const pos = state.positions[state.currentPly];
   if (pos) updateCapturedPieces(pos.fen);
 });
@@ -2572,7 +2911,9 @@ document.addEventListener("keydown", (ev) => {
 
   if (ev.key === "Escape") {
     stopAutoplay();
-    if (!dom.settingsDrawer.classList.contains("hidden")) {
+    if (!dom.shortcutsBackdrop.classList.contains("hidden")) {
+      closeShortcuts();
+    } else if (!dom.settingsDrawer.classList.contains("hidden")) {
       closeSettingsDrawer();
     } else if (!dom.pgnModalBackdrop.classList.contains("hidden")) {
       closePgnModal();
@@ -2582,22 +2923,36 @@ document.addEventListener("keydown", (ev) => {
     return;
   }
 
+  // Browser shortcuts such as Cmd+F are not ChessBot's.
+  if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
+  if (ev.key === "?") {
+    ev.preventDefault();
+    openShortcuts();
+    return;
+  }
+  if (!dom.shortcutsBackdrop.classList.contains("hidden") || !dom.pgnModalBackdrop.classList.contains("hidden")) return;
+  // Buttons and links keep Enter and Space for themselves.
+  const control = tag === "BUTTON" || tag === "A" || tag === "SUMMARY";
+  if (control && (ev.key === "Enter" || ev.key === " ")) return;
+  if (ev.key === "x" || ev.key === "X") {
+    setThreat(!state.showThreat);
+    return;
+  }
+
   if (state.drillActive) return;
 
-  if (ev.key === "ArrowLeft") {
+  if (ev.key === "ArrowLeft" || ev.key === "k" || ev.key === "K") {
     ev.preventDefault();
-    stopAutoplay();
-    if (state.exploring) exitVariation();
-    else goToPly(state.currentPly - 1, true, true);
-  } else if (ev.key === "ArrowRight" || ev.key === "Enter") {
+    stepBack();
+  } else if (ev.key === "ArrowRight" || ev.key === "Enter" || ev.key === "j" || ev.key === "J") {
     ev.preventDefault();
     stopAutoplay();
     dom.guidedNextBtn.click();
-  } else if (ev.key === "ArrowUp") {
+  } else if (ev.key === "ArrowUp" || ev.key === "Home") {
     ev.preventDefault();
     stopAutoplay();
     goToPly(0, true);
-  } else if (ev.key === "ArrowDown") {
+  } else if (ev.key === "ArrowDown" || ev.key === "End") {
     ev.preventDefault();
     stopAutoplay();
     goToPly(state.positions.length - 1, true, true);
@@ -2609,6 +2964,411 @@ document.addEventListener("keydown", (ev) => {
   } else if ((ev.key === "r" || ev.key === "R") && !dom.retryThisMoveBtn.classList.contains("hidden")) {
     dom.retryThisMoveBtn.click();
   }
+});
+
+// ── Engine lines you can hover and click, as in Lichess's analysis board ─────────────────────────
+// Each rendered line is registered by id; its move buttons carry the id and their index.
+const lineRegistry = new Map();
+let previewBoard = null;
+let previewOrientation = null;
+let previewButton = null;
+
+/** Fill `container` with a line's moves. `basePly` is the game position the line starts from (null for a threat line). */
+function renderLineMoves(container, id, basePly, steps, { previewOnly = false } = {}) {
+  // A redrawn line never sends mouseout, so a preview of one of its old moves would stay up.
+  if (previewButton && container.contains(previewButton)) hideLinePreview();
+  lineRegistry.set(id, { basePly, steps, previewOnly });
+  container.classList.toggle("is-preview-only", previewOnly);
+  const frag = document.createDocumentFragment();
+  steps.forEach((step, index) => {
+    if (step.number) {
+      const number = document.createElement("span");
+      number.className = "line-num";
+      number.textContent = step.number;
+      frag.append(number);
+    }
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "line-move";
+    button.textContent = step.san;
+    button.dataset.line = id;
+    button.dataset.index = String(index);
+    button.setAttribute("aria-label", previewOnly ? step.label : `${step.label}: show on the board`);
+    frag.append(button);
+  });
+  container.replaceChildren(frag);
+}
+
+function lineStepFor(button) {
+  const entry = lineRegistry.get(button.dataset.line);
+  const index = Number(button.dataset.index);
+  return entry?.steps[index] ? { entry, index, step: entry.steps[index] } : null;
+}
+
+function showLinePreview(button) {
+  const found = lineStepFor(button);
+  if (!found) return;
+  const { step } = found;
+  previewButton = button;
+  dom.linePreview.classList.remove("hidden");
+  const orientation = state.orientation === "b" ? COLOR.black : COLOR.white;
+  if (!previewBoard) {
+    previewBoard = createBoard(dom.linePreviewBoard, { orientation: state.orientation, position: step.fen, coordinates: false });
+  } else {
+    if (previewOrientation !== orientation) previewBoard.setOrientation(orientation, false);
+    previewBoard.setPosition(step.fen, false);
+  }
+  previewOrientation = orientation;
+  previewBoard.removeMarkers(MARKER_TYPE.square);
+  previewBoard.addMarker(MARKER_TYPE.square, step.from);
+  previewBoard.addMarker(MARKER_TYPE.square, step.to);
+  dom.linePreviewLabel.textContent = step.label;
+
+  // Above the move when there is room, otherwise below; always inside the window.
+  const rect = button.getBoundingClientRect();
+  const width = dom.linePreview.offsetWidth;
+  const height = dom.linePreview.offsetHeight;
+  const left = Math.min(window.innerWidth - width - 8, Math.max(8, rect.left + rect.width / 2 - width / 2));
+  const top = rect.top - height - 8 >= 8 ? rect.top - height - 8 : Math.min(window.innerHeight - height - 8, rect.bottom + 8);
+  dom.linePreview.style.left = `${left}px`;
+  dom.linePreview.style.top = `${top}px`;
+}
+
+function hideLinePreview() {
+  previewButton = null;
+  dom.linePreview.classList.add("hidden");
+}
+
+function playLineMove(button) {
+  const found = lineStepFor(button);
+  hideLinePreview();
+  if (!found || found.entry.previewOnly || state.drillActive || !state.positions.length) return;
+  const { entry, index } = found;
+  const uci = entry.steps.map((step) => step.uci);
+  // A line starts from the position before a move; show that move, then the line from before it.
+  if (state.currentPly !== entry.basePly + 1) goToPly(entry.basePly + 1, false);
+  playVariationOnBoard(entry.basePly, [uci[index]], ARROW_BEST, uci.slice(0, index));
+}
+
+document.addEventListener("mouseover", (event) => {
+  const button = event.target.closest?.(".line-move");
+  if (button) showLinePreview(button);
+});
+document.addEventListener("mouseout", (event) => {
+  const button = event.target.closest?.(".line-move");
+  if (button && !button.contains(event.relatedTarget)) hideLinePreview();
+});
+document.addEventListener("focusin", (event) => {
+  if (event.target.matches?.(".line-move")) showLinePreview(event.target);
+});
+document.addEventListener("focusout", (event) => {
+  if (event.target.matches?.(".line-move")) hideLinePreview();
+});
+document.addEventListener("click", (event) => {
+  const button = event.target.closest?.(".line-move");
+  if (button) playLineMove(button);
+});
+document.addEventListener("scroll", hideLinePreview, true);
+
+// ── Arrows and circles drawn with the right mouse button ──────────────────────────────────────────
+const SHAPE_STROKE = { green: "#15781b", red: "#882020", blue: "#003088", yellow: "#e68f00", threat: "#e0524f" };
+let drawing = null;
+
+const shapeKey = (fen) => (fen ? fen.split(" ").slice(0, 2).join(" ") : "");
+
+function boardSquareAt(event) {
+  const rect = dom.boardEl.getBoundingClientRect();
+  return squareAt((event.clientX - rect.left) / rect.width, (event.clientY - rect.top) / rect.height, state.orientation);
+}
+
+function shapeElement(shape, { pending = false, threat = null } = {}) {
+  const color = threat ? "threat" : shape.color;
+  const classes = ["shape", shape.to ? "shape-arrow" : "shape-circle"];
+  if (pending) classes.push("shape-pending");
+  if (threat) classes.push("shape-threat", ...(threat.serious ? [] : ["is-minor"]));
+  if (!shape.to) {
+    const { x, y } = squareCenter(shape.from, state.orientation);
+    return createSvgEl("circle", { cx: x, cy: y, r: 0.46, stroke: SHAPE_STROKE[color], class: classes.join(" ") });
+  }
+  const line = arrowLine(shape.from, shape.to, state.orientation, 0.5);
+  return createSvgEl("line", {
+    ...line, stroke: SHAPE_STROKE[color], "marker-end": `url(#shape-head-${color})`, class: classes.join(" "),
+  });
+}
+
+function renderShapeLayer() {
+  const layer = dom.shapeLayer;
+  if (!layer) return;
+  const key = shapeKey(state.shownFen);
+  const shapes = [...(state.shapes.get(key) ?? [])];
+  const children = [];
+  const threat = state.showThreat && threatView.key === key ? threatView.arrow : null;
+  if (shapes.length || drawing?.current || threat) {
+    const defs = createSvgEl("defs");
+    for (const [color, stroke] of Object.entries(SHAPE_STROKE)) {
+      const marker = createSvgEl("marker", {
+        id: `shape-head-${color}`, viewBox: "0 0 10 10", refX: 0, refY: 5,
+        markerWidth: 4, markerHeight: 4, orient: "auto", markerUnits: "strokeWidth",
+      });
+      marker.append(createSvgEl("path", { d: "M0,0 L10,5 L0,10 Z", fill: stroke }));
+      defs.append(marker);
+    }
+    children.push(defs);
+  }
+  if (threat) children.push(shapeElement(threat, { threat }));
+  for (const shape of shapes) children.push(shapeElement(shape));
+  if (drawing?.current) children.push(shapeElement(makeShape(drawing.from, drawing.current, drawing.color), { pending: true }));
+  layer.replaceChildren(...children);
+}
+
+dom.boardThemeWrap.addEventListener("mousedown", (event) => {
+  if (!state.shownFen) return;
+  if (event.button === 0) {
+    // A left click clears the drawings on this position, as on Lichess.
+    if (state.shapes.delete(shapeKey(state.shownFen))) renderShapeLayer();
+    return;
+  }
+  if (event.button !== 2) return;
+  const square = boardSquareAt(event);
+  if (!square) return;
+  event.preventDefault();
+  drawing = { from: square, current: square, color: shapeColor(event) };
+  renderShapeLayer();
+});
+window.addEventListener("mousemove", (event) => {
+  if (!drawing) return;
+  const square = boardSquareAt(event) ?? drawing.current;
+  if (square !== drawing.current) {
+    drawing.current = square;
+    renderShapeLayer();
+  }
+});
+window.addEventListener("mouseup", (event) => {
+  if (!drawing || event.button !== 2) return;
+  const { from, color } = drawing;
+  const to = boardSquareAt(event);
+  drawing = null;
+  if (to && state.shownFen) {
+    const key = shapeKey(state.shownFen);
+    const shapes = toggleShape(state.shapes.get(key) ?? [], makeShape(from, to, color));
+    if (shapes.length) state.shapes.set(key, shapes);
+    else state.shapes.delete(key);
+  }
+  renderShapeLayer();
+});
+dom.boardThemeWrap.addEventListener("contextmenu", (event) => event.preventDefault());
+
+// ── Show threat (X): what the side that just moved would play if it could move again ────────────
+const THREAT_DEPTH = 14;
+const threatView = { runId: 0, key: null, arrow: null };
+
+/** Search on the review pool while a review runs (ahead of its queue), otherwise on the main engine. */
+function interactiveSearch(task) {
+  if (enginePool) return enginePool.run(task, { priority: true });
+  if (!engine) return Promise.reject(new Error("Stockfish has not started"));
+  return task(engine);
+}
+
+/** The engine's evaluation of a position the page already searched, if any. */
+function knownEval(fen) {
+  if (state.positions[state.currentPly]?.fen === fen && state.evals[state.currentPly]) return state.evals[state.currentPly].eval;
+  if (state.variationEval?.fen === fen) return state.variationEval.eval;
+  return null;
+}
+
+function setThreat(enabled) {
+  state.showThreat = enabled;
+  dom.threatBtn.setAttribute("aria-pressed", String(enabled));
+  dom.threatBtn.title = enabled ? "Hide threat (X)" : "Show threat (X)";
+  refreshThreat();
+}
+
+async function refreshThreat() {
+  const runId = ++threatView.runId;
+  const fen = state.shownFen;
+  threatView.key = shapeKey(fen);
+  threatView.arrow = null;
+  dom.threatBanner.classList.toggle("hidden", !state.showThreat || !fen);
+  renderShapeLayer();
+  if (!state.showThreat || !fen) return;
+
+  const passed = threatFen(fen);
+  const attacker = fen.split(" ")[1] === "w" ? "Black" : "White";
+  dom.threatBanner.classList.add("is-minor");
+  dom.threatEval.textContent = "";
+  dom.threatLine.replaceChildren();
+  if (!passed) {
+    const inCheck = new Chess(fen).inCheck();
+    dom.threatText.textContent = inCheck ? `${attacker} is already giving check.` : "The game is over in this position.";
+    return;
+  }
+  dom.threatText.textContent = `Checking what ${attacker} threatens…`;
+  const current = knownEval(fen);
+  let result;
+  try {
+    result = await interactiveSearch(async (searchEngine) => {
+      if (runId !== threatView.runId) return null;
+      const threat = await searchEngine.analyzePosition(passed, THREAT_DEPTH, { multiPv: 1 });
+      // Judging the threat needs the real position's evaluation too.
+      const real = current ?? (runId === threatView.runId ? (await searchEngine.analyzePosition(fen, THREAT_DEPTH, { multiPv: 1 })).eval : null);
+      return { threat, real };
+    });
+  } catch {
+    if (runId === threatView.runId) dom.threatText.textContent = "Stockfish isn't ready yet. Try again in a moment.";
+    return;
+  }
+  if (runId !== threatView.runId || !result) return;
+  const { threat, real } = result;
+  const steps = lineSteps(passed, threat.pv, 6);
+  const verdict = describeThreat({
+    attacker: passed.split(" ")[1], steps, threatEval: threat.eval, currentEval: real,
+    // The six moves shown: a longer line picks up later trades that have nothing to do with the threat.
+    tactic: findTactic(passed, threat.pv), gain: captureGain(passed, steps),
+  });
+  dom.threatText.textContent = verdict.headline;
+  dom.threatBanner.classList.toggle("is-minor", !verdict.serious);
+  dom.threatEval.textContent = steps.length ? formatEval(threat.eval) : "";
+  dom.threatEval.title = "Stockfish's evaluation if the threat could be played";
+  renderLineMoves(dom.threatLine, "threat", null, steps, { previewOnly: true });
+  if (steps[0]) threatView.arrow = { from: steps[0].from, to: steps[0].to, serious: verdict.serious };
+  renderShapeLayer();
+}
+
+dom.threatBtn.addEventListener("click", () => setThreat(!state.showThreat));
+
+// ── Stepping: wheel on the board, and stepping back inside a variation ───────────────────────────
+function stepBackInVariation() {
+  stopBestLineAnimation();
+  if (state.variationUci.length <= 1) {
+    exitVariation();
+    return;
+  }
+  state.variationUci.pop();
+  state.variationMoves.pop();
+  state.boardEpoch++;
+  state.variationEvalRunId++;
+  const sim = replayVariation(state.positions[state.variationBasePly], state.variationUci);
+  board.removeArrows();
+  showPosition(sim.fen(), true);
+  updateCapturedPieces(sim.fen());
+  renderVariationBanner();
+  evaluateVariationPosition();
+}
+
+function stepBack() {
+  stopAutoplay();
+  if (state.exploring) stepBackInVariation();
+  else goToPly(state.currentPly - 1, true, true);
+}
+
+// One move per wheel notch. Trackpads send many small pixel deltas, so those add up to a step.
+const WHEEL_STEP = 50;
+let wheelTotal = 0;
+dom.boardThemeWrap.addEventListener("wheel", (event) => {
+  if (!state.positions.length || state.drillActive) return;
+  event.preventDefault();
+  wheelTotal += event.deltaMode === 0 ? event.deltaY : Math.sign(event.deltaY) * WHEEL_STEP;
+  if (Math.abs(wheelTotal) < WHEEL_STEP) return;
+  const forward = wheelTotal > 0;
+  wheelTotal = 0;
+  if (forward) {
+    if (state.exploring) return;
+    stopAutoplay();
+    goToPly(state.currentPly + 1, true, true);
+  } else {
+    stepBack();
+  }
+}, { passive: false });
+
+// ── Shortcut sheet (?) ────────────────────────────────────────────────────────────────────────────
+function openShortcuts() {
+  dom.shortcutsBackdrop.classList.remove("hidden");
+  dom.closeShortcutsBtn.focus();
+}
+
+function closeShortcuts() {
+  dom.shortcutsBackdrop.classList.add("hidden");
+}
+
+dom.shortcutsBtn.addEventListener("click", openShortcuts);
+dom.closeShortcutsBtn.addEventListener("click", closeShortcuts);
+dom.shortcutsBackdrop.addEventListener("click", (event) => {
+  if (event.target === dom.shortcutsBackdrop) closeShortcuts();
+});
+
+// ── Annotated PGN export ──────────────────────────────────────────────────────────────────────────
+function buildAnnotatedPgn() {
+  const moves = [];
+  for (let ply = 1; ply < state.positions.length; ply++) {
+    const position = state.positions[ply];
+    const before = state.positions[ply - 1];
+    const review = state.moveReviews[ply];
+    const grade = review && !review.book ? review.classification.key : null;
+    // Each [%eval] is the position's own evaluation, as on the chart, so a comment's change runs from
+    // the previous move's [%eval] to this one's.
+    const after = state.evals[ply]?.eval ?? review?.playedEval ?? null;
+    const comment = grade ? mistakeComment(grade, review.bestSan) : "";
+    moves.push({
+      san: position.move.san,
+      color: position.move.color,
+      number: position.move.number,
+      nag: grade ? GRADE_NAG[grade] : undefined,
+      eval: after,
+      clock: position.practicalContext?.[position.move.color === "w" ? "whiteSeconds" : "blackSeconds"],
+      comment: comment ? `${swingText(state.evals[ply - 1]?.eval, after)} ${comment}` : "",
+      variation: comment ? lineSteps(before.fen, state.evals[ply - 1]?.pv, 8) : null,
+    });
+  }
+  const version = extension?.runtime?.getManifest?.().version;
+  return annotatedPgn({
+    headers: state.gameHeaders ?? {}, moves,
+    annotator: `ChessBot${version ? ` ${version}` : ""} (Stockfish 19, depth ${dom.depthSelect.value})`,
+  });
+}
+
+let exportStatusTimer = null;
+function showExportStatus(text) {
+  dom.exportStatus.textContent = text;
+  clearTimeout(exportStatusTimer);
+  exportStatusTimer = setTimeout(() => { dom.exportStatus.textContent = ""; }, 2500);
+}
+
+function updateExportButtons() {
+  const ready = state.positions.length > 1 && !state.isAnalyzing;
+  for (const button of [dom.copyPgnBtn, dom.downloadPgnBtn]) {
+    button.disabled = !ready;
+  }
+  dom.copyPgnBtn.title = ready ? "Copy the game as PGN with evaluations, grades, and Stockfish's better lines"
+    : "Available when the review finishes";
+}
+
+dom.copyPgnBtn.addEventListener("click", async () => {
+  const pgn = buildAnnotatedPgn();
+  try {
+    await navigator.clipboard.writeText(pgn);
+    showExportStatus("Copied");
+  } catch {
+    // Some pages can't use the clipboard API; fall back to a selected text area.
+    const area = document.createElement("textarea");
+    area.value = pgn;
+    document.body.append(area);
+    area.select();
+    const copied = document.execCommand("copy");
+    area.remove();
+    showExportStatus(copied ? "Copied" : "Copy failed");
+  }
+});
+
+dom.downloadPgnBtn.addEventListener("click", () => {
+  const url = URL.createObjectURL(new Blob([buildAnnotatedPgn()], { type: "application/x-chess-pgn" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = pgnFileName(state.gameHeaders ?? {});
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  showExportStatus("Saved");
 });
 
 async function bootstrap() {

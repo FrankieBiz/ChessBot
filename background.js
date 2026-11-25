@@ -1,5 +1,5 @@
 /**
- * Chess.com Local Game Review — Chrome MV3 Service Worker (background.js)
+ * ChessBot — Chrome MV3 Service Worker (background.js)
  *
  * Queries Chess.com's official PubAPI across candidate player usernames with
  * automatic retry/backoff, month-boundary & archive fallback, stores the game
