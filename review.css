@@ -1,4 +1,4 @@
-/* Chess.com Local Game Review — v2.0 Studio Dark UI */
+/* ChessBot review page — Studio Dark UI */
 :root {
   --bg: #11100e;
   --bg-elevated: #181714;
@@ -309,6 +309,25 @@ html, body {
   white-space: nowrap;
 }
 
+.progress-report {
+  font-size: 11.5px;
+  color: var(--accent, #81b64c);
+  white-space: nowrap;
+}
+
+.report-field .btn {
+  align-self: flex-start;
+  text-decoration: none;
+}
+
+/* Keyboard focus stays visible on every control, including ones that hide the default outline. */
+:focus-visible,
+.depth-control select:focus-visible,
+.cap-input:focus-visible {
+  outline: 2px solid var(--accent-bright);
+  outline-offset: 2px;
+}
+
 /* Studio Two-Column Layout */
 .studio {
   max-width: 1320px;
@@ -567,10 +586,16 @@ html, body {
   stroke: rgba(38, 198, 218, 0.9);
 }
 
+.cm-chessboard .arrows .arrow.arrow-coach-reply .arrow-head { fill: #ec9a76; }
+.cm-chessboard .arrows .arrow.arrow-coach-reply .arrow-line { stroke: #ec9a76; }
+.cm-chessboard .marker.marker-frame-danger { fill: #ec9a76; opacity: .85; }
+.cm-chessboard .arrows .arrow.arrow-tactic .arrow-head { fill: #e2574c; }
+.cm-chessboard .arrows .arrow.arrow-tactic .arrow-line { stroke: #e2574c; stroke-dasharray: 3 2; }
+
 /* Transport Controls */
 .nav-controls {
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
+  grid-template-columns: repeat(7, 1fr);
   gap: 6px;
 }
 
@@ -601,7 +626,7 @@ html, body {
   gap: 14px;
   flex-wrap: wrap;
   font-size: 11px;
-  color: #706d67;
+  color: var(--text-muted);
 }
 
 .shortcut-bar kbd {
@@ -722,7 +747,7 @@ html, body {
   padding: 1px 6px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.07);
-  color: var(--text-muted);
+  color: var(--text-secondary);
 }
 
 .tab-btn.active .tab-count {
@@ -888,6 +913,81 @@ html, body {
   flex-wrap: wrap;
 }
 
+.move-evidence {
+  display: grid;
+  gap: 7px;
+  background: #28211d;
+  border-left: 2px solid #ec9a76;
+  border-radius: 0 7px 7px 0;
+  padding: 8px 10px;
+  color: var(--text-secondary);
+  font-size: 12.5px;
+}
+
+.deep-evidence {
+  background: #20272c;
+  border-left-color: #91abc1;
+}
+
+.deep-evidence-line { font: 11.5px/1.5 var(--font-mono); }
+.deep-evidence-line:empty { display: none; }
+.deep-evidence > button { justify-self: start; }
+
+.opening-study {
+  border-block: 1px solid var(--border);
+  background: rgba(189, 161, 129, .035);
+}
+
+.opening-study > summary {
+  cursor: pointer;
+  padding: 9px 4px;
+  font-weight: 700;
+}
+
+.opening-study > summary::marker { color: #bda181; }
+.opening-study > summary span { color: var(--text-secondary); font-weight: 400; margin-left: 6px; }
+.opening-study-content { display: grid; justify-items: start; gap: 9px; padding: 0 4px 11px; }
+.opening-study-content > p { color: var(--text-secondary); font-size: 12px; }
+.opening-choices { display: grid; width: 100%; gap: 4px; }
+.opening-choice-entry { display: grid; gap: 3px; }
+.opening-example-links { display: flex; align-items: center; gap: 9px; padding: 2px 0 6px; }
+.opening-example-links a { color: var(--text-secondary); font-size: 11px; }
+
+.opening-choice {
+  display: grid;
+  grid-template-columns: minmax(42px, .6fr) minmax(70px, .9fr) minmax(100px, 1.6fr);
+  align-items: center;
+  gap: 8px;
+  padding: 6px 9px;
+  text-align: left;
+  color: var(--text);
+  border: 1px solid var(--border-subtle);
+  border-radius: 5px;
+  background: var(--surface);
+  cursor: pointer;
+}
+
+.opening-choice:hover { background: var(--surface-hover); }
+.opening-choice > strong { font-family: var(--font-mono); }
+.opening-choice > span { font-size: 11px; color: var(--text-secondary); }
+.opening-outcomes { display: grid; gap: 2px; }
+.opening-outcome-bar { display: flex; height: 4px; overflow: hidden; border-radius: 2px; }
+.opening-outcome-bar > span:nth-child(1) { background: #d5bc9c; }
+.opening-outcome-bar > span:nth-child(2) { background: #827b75; }
+.opening-outcome-bar > span:nth-child(3) { background: #8aa9ba; }
+.opening-study-content > .opening-sample { color: var(--text-muted); font-size: 11px; }
+
+.performance-context {
+  display: grid;
+  gap: 5px;
+  margin-top: 9px;
+  padding: 8px 10px;
+  border-left: 2px solid #91abc1;
+  background: rgba(145, 171, 193, .07);
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
 .coach-output {
   background: rgba(38, 198, 218, 0.08);
   border: 1px solid rgba(38, 198, 218, 0.26);
@@ -935,19 +1035,71 @@ html, body {
 
 .section-hint {
   font-size: 11px;
-  color: #706d67;
+  color: var(--text-muted);
 }
 
 /* Evaluation Graph */
 .eval-graph-wrap {
   position: relative;
   width: 100%;
-  height: 112px;
-  background: #141311;
+  height: 132px;
+  background: #2b2925;
   border: 1px solid var(--border);
   border-radius: 9px;
   overflow: hidden;
   cursor: pointer;
+  touch-action: none;
+}
+
+.chart-label {
+  font-family: var(--font-sans);
+  pointer-events: none;
+}
+
+.chart-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.chart-tabs button {
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.chart-tabs button.active {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.count-jump {
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  padding: 1px 6px;
+  border-radius: 5px;
+  cursor: pointer;
+  text-decoration: underline dotted rgba(255, 255, 255, 0.35);
+  text-underline-offset: 3px;
+}
+
+.count-jump:hover {
+  background: var(--surface-hover);
+}
+
+.chart-hint {
+  margin: 6px 0 0;
 }
 
 #evalGraphSvg {
@@ -1300,6 +1452,20 @@ html, body {
   border-radius: 4px;
   color: #11100e;
   margin-left: 6px;
+}
+
+/* A quick-pass grade that a deeper check may still change. */
+.move-cell.is-provisional .move-cell-badge {
+  opacity: 0.55;
+  animation: provisional-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes provisional-pulse {
+  50% { opacity: 0.85; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .move-cell.is-provisional .move-cell-badge { animation: none; }
 }
 
 /* Drills Tab */
@@ -1682,4 +1848,274 @@ html, body {
 .moment-pill.miss {
   border-color: rgba(242, 107, 94, 0.55);
   color: #ffa59c;
+}
+
+/* Practice link and the practice save notice */
+a.btn {
+  text-decoration: none;
+}
+
+.training-notice {
+  max-width: 1320px;
+  margin: 8px auto 0;
+  padding: 0 24px;
+  color: var(--warning);
+  font-size: 12.5px;
+}
+
+.field.field-inline {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Engine lines whose moves can be hovered (preview) and clicked (play to that move), as on Lichess */
+.line-moves {
+  font-family: var(--font-mono);
+  color: #e2dfd9;
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 4px;
+  row-gap: 2px;
+}
+
+.line-num {
+  color: var(--text-muted);
+}
+
+.line-move {
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  padding: 0 3px;
+  margin: 0 -3px;
+  cursor: pointer;
+}
+
+.line-move:hover,
+.line-move:focus-visible {
+  background: rgba(129, 182, 76, 0.22);
+  color: #fff;
+}
+
+.line-moves.is-preview-only .line-move {
+  cursor: default;
+}
+
+.line-preview {
+  position: fixed;
+  z-index: 200;
+  width: 196px;
+  padding: 6px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-radius: 9px;
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.6);
+  pointer-events: none;
+}
+
+.line-preview-board {
+  width: 184px;
+  height: 184px;
+}
+
+.line-preview-label {
+  margin-top: 5px;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text-secondary);
+}
+
+/* Computer comments under mistakes in the move list */
+.move-filler {
+  color: var(--text-muted);
+  padding: 6px 9px;
+  font-size: 12px;
+}
+
+.move-comment {
+  margin: 2px 0 6px 40px;
+  padding: 6px 9px;
+  border-left: 2px solid var(--comment-color, var(--border-strong));
+  background: rgba(255, 255, 255, 0.025);
+  border-radius: 0 6px 6px 0;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.move-comment.is-provisional {
+  opacity: 0.7;
+}
+
+.move-comment-grade {
+  font-weight: 700;
+  color: var(--comment-color, var(--text));
+}
+
+.move-comment-swing {
+  margin-left: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.move-comment .line-moves {
+  display: flex;
+  margin-top: 2px;
+  font-size: 11.5px;
+  color: var(--text-secondary);
+}
+
+.moves-export {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.export-status {
+  font-size: 11px;
+  color: var(--accent-bright);
+}
+
+/* Drawn arrows and circles, and the threat arrow */
+.shape-layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 15;
+  overflow: visible;
+}
+
+.shape-layer .shape {
+  fill: none;
+  stroke-width: 0.15;
+  stroke-linecap: round;
+  opacity: 0.82;
+}
+
+.shape-layer .shape-circle {
+  stroke-width: 0.07;
+}
+
+.shape-layer .shape-pending {
+  opacity: 0.5;
+}
+
+.shape-layer .shape-threat {
+  stroke-dasharray: 0.22 0.14;
+  stroke-linecap: butt;
+  opacity: 0.9;
+}
+
+.shape-layer .shape-threat.is-minor {
+  opacity: 0.45;
+}
+
+/* Threat banner */
+.banner-threat {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border-color: rgba(224, 82, 79, 0.45);
+  background: rgba(224, 82, 79, 0.08);
+}
+
+.banner-threat.is-minor {
+  border-color: var(--border);
+  background: var(--surface);
+}
+
+.threat-info,
+.threat-detail {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.threat-pill {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  background: rgba(224, 82, 79, 0.24);
+  color: #f3b1ae;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.banner-threat.is-minor .threat-pill {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-secondary);
+}
+
+.banner-threat .line-moves {
+  font-size: 11.5px;
+}
+
+#threatBtn[aria-pressed="true"] {
+  color: #f3b1ae;
+  border-color: rgba(224, 82, 79, 0.55);
+  background: rgba(224, 82, 79, 0.14);
+}
+
+/* Shortcut sheet */
+.shortcut-more {
+  font: inherit;
+  font-size: 11px;
+  color: var(--text-muted);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  padding: 0;
+}
+
+.shortcut-more:hover {
+  color: var(--text-secondary);
+}
+
+.shortcuts-modal {
+  width: 560px;
+}
+
+.shortcuts-body h3 {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.shortcuts-body dl {
+  display: grid;
+  grid-template-columns: minmax(170px, auto) 1fr;
+  gap: 6px 14px;
+  font-size: 12.5px;
+}
+
+.shortcuts-body dt {
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.shortcuts-body dd {
+  color: var(--text-secondary);
+}
+
+.shortcuts-body kbd {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 5px;
+  color: #c8c5be;
 }

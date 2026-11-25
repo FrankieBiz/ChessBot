@@ -1,10 +1,10 @@
 /**
- * Chess.com Local Game Review — Content Script (v1.3 — AMO Linter Clean)
+ * ChessBot — Content Script (v1.3 — AMO Linter Clean)
  * Matches *://*.chess.com/game/*
  *
  * Uses pure DOM APIs (zero innerHTML/outerHTML) to pass Mozilla addons-linter cleanly.
  * Strictly waits for a game to officially end before injecting a full-width
- * "Local Game Review" button. Never triggers during live games.
+ * "ChessBot Review" button. Never triggers during live games.
  */
 (() => {
   "use strict";
@@ -90,6 +90,25 @@
     return null;
   }
 
+  const NAV_USERNAME_SELECTORS = [
+    "#notifications-request[data-username]",
+    "[data-user-activity-key]",
+    ".nav-user-menu-button[href*='/member/']",
+  ];
+
+  /** The signed-in account's name, from the site navigation only (never the board's player tags). */
+  function detectAccountUsername() {
+    const boardArea = "#board-layout-player-top, #board-layout-player-bottom, .board-layout-top, .board-layout-bottom, .player-top, .player-bottom";
+    for (const sel of NAV_USERNAME_SELECTORS) {
+      for (const el of document.querySelectorAll(sel)) {
+        if (el.closest(boardArea)) continue;
+        const name = extractUsernameFromElement(el);
+        if (isValidUsername(name)) return name.trim();
+      }
+    }
+    return null;
+  }
+
   function detectGameUsernames() {
     const candidates = [];
     const addCandidate = (name) => {
@@ -113,12 +132,7 @@
       addCandidate(extractUsernameFromElement(document.querySelector(sel)));
     }
 
-    const navSelectors = [
-      "#notifications-request[data-username]",
-      "[data-user-activity-key]",
-      ".nav-user-menu-button[href*='/member/']",
-    ];
-    for (const sel of navSelectors) {
+    for (const sel of NAV_USERNAME_SELECTORS) {
       addCandidate(extractUsernameFromElement(document.querySelector(sel)));
     }
 
@@ -206,7 +220,7 @@
     iconSlot.appendChild(createSparkleIcon());
 
     const labelSpan = document.createElement("span");
-    labelSpan.textContent = "Local Game Review";
+    labelSpan.textContent = "ChessBot Review";
 
     btn.appendChild(iconSlot);
     btn.appendChild(labelSpan);
@@ -248,7 +262,7 @@
 
     if (!username) {
       const entered = window.prompt(
-        "Chess.com Local Game Review:\nEnter your Chess.com username (or either player's username) to fetch this game's PGN:"
+        "ChessBot:\nEnter your Chess.com username to fetch this game's PGN:"
       );
       if (!entered || !isValidUsername(entered)) {
         statusEl.textContent = "Please enter a valid Chess.com username.";
@@ -277,12 +291,13 @@
         gameType: parsed.gameType,
         username,
         candidateUsernames,
+        accountUsername: detectAccountUsername(),
         pageUrl: window.location.href,
       });
 
       if (response && response.ok) {
         statusEl.className = "clgr-status-text clgr-success";
-        statusEl.textContent = "Opened Local Game Review!";
+        statusEl.textContent = "Opened ChessBot Review!";
         setTimeout(() => {
           resetButton(btn, iconSlot, labelSpan, statusEl);
         }, 2000);
@@ -304,7 +319,7 @@
   function resetButton(btn, iconSlot, labelSpan, statusEl) {
     btn.disabled = false;
     iconSlot.replaceChildren(createSparkleIcon());
-    labelSpan.textContent = "Local Game Review";
+    labelSpan.textContent = "ChessBot Review";
     if (statusEl) {
       statusEl.textContent = "";
       statusEl.className = "clgr-status-text";

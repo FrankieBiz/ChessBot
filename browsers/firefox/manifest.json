@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Chess.com Local Game Review",
-  "version": "3.4.0",
-  "description": "Offline Stockfish 19 post-game analysis, move accuracy, and chess coaching.",
+  "name": "ChessBot: Local Game Review",
+  "version": "3.8.0",
+  "description": "Private, offline Stockfish 19 game review with move grades, named tactics and spaced practice. Works with Chess.com games and PGNs.",
   "icons": {
     "48": "icons/icon-48.png",
     "96": "icons/icon-96.png",
@@ -41,7 +41,7 @@
     ]
   },
   "action": {
-    "default_title": "Open Local Game Review",
+    "default_title": "Open ChessBot Review",
     "default_icon": {
       "48": "icons/icon-48.png",
       "96": "icons/icon-96.png"

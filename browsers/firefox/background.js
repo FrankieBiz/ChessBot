@@ -1,5 +1,5 @@
 /**
- * Chess.com Local Game Review — Background Script (Firefox MV3)
+ * ChessBot — Background Script (Firefox MV3)
  *
  * Queries Chess.com's official PubAPI across candidate player usernames with
  * automatic retry/backoff, month-boundary & archive fallback, stores the game
@@ -225,7 +225,7 @@ function detectPlayedColor(game, primaryUsername) {
 /**
  * Build a clean normalized game record for review.html.
  */
-function buildGamePayload(game, gameId, primaryUsername) {
+function buildGamePayload(game, gameId, primaryUsername, accountUsername = null) {
   return {
     gameId,
     url: game.url || "",
@@ -235,6 +235,7 @@ function buildGamePayload(game, gameId, primaryUsername) {
     rated: Boolean(game.rated),
     endTime: game.end_time || Math.floor(Date.now() / 1000),
     username: primaryUsername,
+    accountUsername,
     playedColor: detectPlayedColor(game, primaryUsername),
     white: {
       username: game.white?.username || "White",
@@ -283,6 +284,7 @@ browser.runtime.onMessage.addListener((message) => {
   return (async () => {
     try {
       const { gameId, username, candidateUsernames } = message;
+      const accountUsername = isValidUsername(message.accountUsername) ? message.accountUsername.trim() : null;
       if (!gameId) {
         return { ok: false, error: "Missing game ID." };
       }
@@ -303,7 +305,7 @@ browser.runtime.onMessage.addListener((message) => {
 
       const { game, matchedUser } = await fetchGameWithRetry(candidates, gameId);
       const primaryUser = candidates[0] || matchedUser;
-      const payload = buildGamePayload(game, gameId, primaryUser);
+      const payload = buildGamePayload(game, gameId, primaryUser, accountUsername);
       await saveGameToStorage(payload);
 
       await browser.tabs.create({

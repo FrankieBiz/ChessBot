@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Chess.com Local Game Review</title>
+  <title>ChessBot Game Review</title>
   <link rel="icon" type="image/svg+xml" href="./icons/icon.svg" />
   <link rel="stylesheet" href="./vendor/cm-chessboard/assets/chessboard.css" />
   <link rel="stylesheet" href="./vendor/cm-chessboard/assets/extensions/arrows/arrows.css" />
@@ -17,7 +17,7 @@
       <img src="./icons/icon.svg" alt="" class="brand-icon" />
       <div class="brand-text">
         <div class="brand-title-row">
-          <h1>Local Game Review</h1>
+          <h1>ChessBot</h1>
           <span id="openingTag" class="opening-tag hidden"></span>
         </div>
         <span id="gameMetaSubtitle" class="game-meta">Ready to analyze</span>
@@ -46,6 +46,11 @@
         <span>Load PGN</span>
       </button>
 
+      <a id="practiceBtn" class="btn btn-secondary" href="./practice.html" target="_blank" rel="noopener" title="Practice puzzles from your reviewed games">
+        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/></svg>
+        <span>Practice</span>
+        <span id="practiceDueBadge" class="tab-count hidden">0</span>
+      </a>
       <button id="soundToggleBtn" class="btn btn-icon" type="button" title="Toggle Move Sounds" aria-label="Toggle Move Sounds">
         <svg id="soundOnIcon" class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>
         <svg id="soundOffIcon" class="ico hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>
@@ -62,7 +67,10 @@
       <div id="progressFill" class="progress-fill" style="width: 0%"></div>
     </div>
     <span id="progressLabel" class="progress-label">Initializing Stockfish WASM...</span>
+    <a id="reportErrorLink" class="progress-report hidden" target="_blank" rel="noopener noreferrer"
+      href="https://github.com/FrankieBiz/ChessBot/issues/new/choose">Report this problem</a>
   </div>
+  <p id="trainingNotice" class="training-notice hidden" role="status"></p>
 
   <main class="studio">
     <!-- Left Column: Centerpiece Board Stage -->
@@ -89,6 +97,7 @@
           <div id="boardThemeWrap" class="board-container-wrap theme-emerald">
             <div id="board" class="chessboard-mount"></div>
             <div id="squareBadgeOverlay" class="square-badge hidden" aria-hidden="true"></div>
+            <svg id="shapeLayer" class="shape-layer" viewBox="0 0 8 8" aria-hidden="true"></svg>
           </div>
         </div>
 
@@ -115,6 +124,18 @@
         <button id="snapBackBtn" class="btn btn-sm btn-secondary" type="button">Back to Main Line</button>
       </div>
 
+      <!-- What the side that just moved threatens (X) -->
+      <div id="threatBanner" class="banner banner-threat hidden" role="status">
+        <div class="threat-info">
+          <span class="threat-pill">THREAT</span>
+          <span id="threatText"></span>
+        </div>
+        <div class="threat-detail">
+          <span id="threatLine" class="line-moves"></span>
+          <span id="threatEval" class="variation-eval-tag"></span>
+        </div>
+      </div>
+
       <!-- Sleek SVG Transport Controls -->
       <div class="nav-controls">
         <button id="navFirstBtn" class="btn btn-nav" type="button" title="Start (ArrowUp)" aria-label="First move">
@@ -136,14 +157,18 @@
         <button id="flipBoardBtn" class="btn btn-nav" type="button" title="Flip Board (F)" aria-label="Flip board">
           <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
         </button>
+        <button id="threatBtn" class="btn btn-nav" type="button" title="Show threat (X)" aria-label="Show threat" aria-pressed="false">
+          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/><line x1="12" y1="1" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="23"/><line x1="1" y1="12" x2="4" y2="12"/><line x1="20" y1="12" x2="23" y2="12"/></svg>
+        </button>
       </div>
 
-      <div class="shortcut-bar" aria-hidden="true">
-        <span><kbd>←</kbd><kbd>→</kbd> Step</span>
-        <span><kbd>Space</kbd> Play</span>
-        <span><kbd>F</kbd> Flip</span>
-        <span><kbd>R</kbd> Retry</span>
-        <span><kbd>Esc</kbd> Main Line</span>
+      <div class="shortcut-bar">
+        <span aria-hidden="true"><kbd>←</kbd><kbd>→</kbd> Step</span>
+        <span aria-hidden="true"><kbd>Space</kbd> Play</span>
+        <span aria-hidden="true"><kbd>F</kbd> Flip</span>
+        <span aria-hidden="true"><kbd>X</kbd> Threat</span>
+        <span aria-hidden="true"><kbd>Esc</kbd> Main Line</span>
+        <button id="shortcutsBtn" class="shortcut-more" type="button"><kbd>?</kbd> All shortcuts</button>
       </div>
     </section>
 
@@ -187,6 +212,7 @@
             <div id="evalDeltaStrip" class="eval-delta-strip hidden">
               <span id="evalDeltaText"></span>
               <span id="moveAccuracyPill" class="move-acc-pill"></span>
+              <span id="engineLossText" class="practical-impact"></span>
               <span id="practicalImpactText" class="practical-impact hidden"></span>
               <span id="moveDifficultyText" class="practical-impact hidden"></span>
               <span id="temptingMoveText" class="practical-impact hidden"></span>
@@ -198,12 +224,12 @@
               <div id="pvLineWrap" class="pv-line hidden">
                 <span class="pv-rank pv-rank-1">#1</span>
                 <span id="pvEval1" class="pv-eval"></span>
-                <code id="pvLineText"></code>
+                <span id="pvLineText" class="line-moves"></span>
               </div>
               <div id="pvLine2Wrap" class="pv-line pv-line-secondary hidden">
                 <span class="pv-rank pv-rank-2">#2</span>
                 <span id="pvEval2" class="pv-eval"></span>
-                <code id="pvLine2Text"></code>
+                <span id="pvLine2Text" class="line-moves"></span>
               </div>
             </div>
 
@@ -214,9 +240,24 @@
               <button id="showBestLineBtn" class="btn btn-sm btn-secondary hidden" type="button">
                 Show Best Line
               </button>
+              <button id="deepCheckBtn" class="btn btn-sm btn-secondary" type="button" aria-controls="deepCheckResult" title="Use a separate, deeper Stockfish search on this game move">Deep Check</button>
               <button id="explainMistakeBtn" class="btn btn-sm btn-coach hidden" type="button">
                 AI Deep Explain
               </button>
+            </div>
+
+            <div id="coachReply" class="move-evidence hidden">
+              <p id="coachReplyText"></p>
+              <div class="coach-actions">
+                <button id="showReplyBtn" class="btn btn-sm btn-secondary" type="button" aria-pressed="false">Show on board</button>
+                <button id="playReplyBtn" class="btn btn-sm btn-secondary" type="button">Play reply line</button>
+              </div>
+            </div>
+
+            <div id="deepCheckResult" class="move-evidence deep-evidence hidden" role="status">
+              <p id="deepCheckStatus"></p>
+              <p id="deepCheckLine" class="deep-evidence-line"></p>
+              <button id="playDeepLineBtn" class="btn btn-sm btn-secondary hidden" type="button">Play deeper line</button>
             </div>
 
             <div id="aiCoachOutput" class="coach-output hidden">
@@ -225,23 +266,38 @@
             </div>
           </div>
 
+          <details id="openingStudy" class="opening-study hidden">
+            <summary>Opening study <span id="openingStudyName"></span></summary>
+            <div class="opening-study-content">
+              <p id="openingDeparture"></p>
+              <button id="openingDepartureBtn" class="btn btn-sm btn-secondary hidden" type="button">Go to departure</button>
+              <div id="openingChoices" class="opening-choices"></div>
+              <p id="openingSample" class="opening-sample"></p>
+            </div>
+          </details>
+
           <!-- Evaluation Graph + Key Moments -->
           <div class="section-block">
             <div class="section-header">
-              <h3>Advantage Timeline</h3>
-              <span class="section-hint">Hover to inspect • Click to jump</span>
+              <h3 id="chartTitle">Advantage</h3>
+              <div id="chartTabs" class="chart-tabs hidden" role="tablist" aria-label="Chart">
+                <button type="button" role="tab" data-chart="advantage" class="active" aria-selected="true">Advantage</button>
+                <button type="button" role="tab" data-chart="times" aria-selected="false">Move times</button>
+              </div>
             </div>
             <div id="evalGraphWrap" class="eval-graph-wrap">
-              <svg id="evalGraphSvg" viewBox="0 0 420 112" preserveAspectRatio="none" role="img" aria-label="Game evaluation chart"></svg>
+              <svg id="evalGraphSvg" viewBox="0 0 420 132" role="img"
+                aria-label="Game chart. Click or drag along it to move through the game."></svg>
               <div id="evalTooltip" class="eval-tooltip hidden"></div>
             </div>
+            <p class="section-hint chart-hint">Hover to inspect · click or drag to move through the game</p>
             <div id="keyMomentsWrap" class="key-moments hidden">
               <span class="key-moments-label">Turning points</span>
               <div id="keyMomentsList" class="key-moments-list"></div>
             </div>
           </div>
 
-          <!-- Circular Pro Accuracy Rings + ACPL + Phases + 9-Tier Breakdown -->
+          <!-- Accuracy rings, ACPL, phase scores, and move grades -->
           <div class="section-block">
             <div class="section-header">
               <h3 title="Engine accuracy uses Lichess-style game weighting. ACPL is average centipawn loss.">Performance</h3>
@@ -257,11 +313,12 @@
                     <circle class="ring-track" cx="28" cy="28" r="22"/>
                     <circle id="accWhiteRing" class="ring-progress" cx="28" cy="28" r="22"/>
                   </svg>
-                  <span id="accWhiteVal" class="ring-num">--</span>
+                  <span id="accWhiteVal" class="ring-num" title="White engine accuracy">--</span>
                 </div>
                 <div class="ring-meta">
                   <span class="ring-side">White</span>
                   <span id="accWhiteName" class="ring-player">White</span>
+                  <span id="scoredWhiteMoves" class="ring-acpl" title="Discretionary moves scored by Stockfish. Book moves count. Uncertain grades are included."></span>
                   <span id="acplWhiteVal" class="ring-acpl">-- ACPL</span>
                   <span id="qualityWhiteVal" class="ring-acpl" title="Out of 100. Larger Stockfish expected-score losses carry more weight."></span>
                   <span id="worstWhiteVal" class="ring-acpl" title="Largest single-move Stockfish expected-score loss."></span>
@@ -274,17 +331,24 @@
                     <circle class="ring-track" cx="28" cy="28" r="22"/>
                     <circle id="accBlackRing" class="ring-progress" cx="28" cy="28" r="22"/>
                   </svg>
-                  <span id="accBlackVal" class="ring-num">--</span>
+                  <span id="accBlackVal" class="ring-num" title="Black engine accuracy">--</span>
                 </div>
                 <div class="ring-meta">
                   <span class="ring-side">Black</span>
                   <span id="accBlackName" class="ring-player">Black</span>
+                  <span id="scoredBlackMoves" class="ring-acpl" title="Discretionary moves scored by Stockfish. Book moves count. Uncertain grades are included."></span>
                   <span id="acplBlackVal" class="ring-acpl">-- ACPL</span>
                   <span id="qualityBlackVal" class="ring-acpl" title="Out of 100. Larger Stockfish expected-score losses carry more weight."></span>
                   <span id="worstBlackVal" class="ring-acpl" title="Largest single-move Stockfish expected-score loss."></span>
                 </div>
               </div>
             </div>
+
+            <section id="performanceContext" class="performance-context hidden" aria-label="Performance context">
+              <p id="peerWhiteContext" class="hidden"></p>
+              <p id="peerBlackContext" class="hidden"></p>
+              <p id="personalContext" class="hidden"></p>
+            </section>
 
             <div id="phaseStrip" class="phase-strip hidden">
               <div class="phase-item">
@@ -333,7 +397,11 @@
         <div class="inspector-scroll">
           <div class="section-header">
             <h3>Algebraic Notation</h3>
-            <span class="section-hint">Click any move to jump</span>
+            <div class="moves-export">
+              <span id="exportStatus" class="export-status" role="status"></span>
+              <button id="copyPgnBtn" class="btn btn-sm btn-secondary" type="button" title="Copy the game as PGN with evaluations, grades, and Stockfish's better lines">Copy PGN</button>
+              <button id="downloadPgnBtn" class="btn btn-sm btn-secondary" type="button" title="Save the game as an annotated .pgn file">Download</button>
+            </div>
           </div>
           <div id="moveList" class="move-list" role="listbox" aria-label="Game move list"></div>
         </div>
@@ -436,10 +504,64 @@
         <button id="saveSettingsBtn" class="btn btn-accent" type="button">Save Settings</button>
         <span id="settingsSavedMsg" class="saved-msg"></span>
       </div>
+
+      <div class="field report-field">
+        <span>Something not working?</span>
+        <a id="reportProblemLink" class="btn btn-secondary" target="_blank" rel="noopener noreferrer"
+          href="https://github.com/FrankieBiz/ChessBot/issues/new/choose">Report a problem</a>
+        <p class="drawer-note">Opens a GitHub bug form with your ChessBot version and browser filled in. Nothing is sent until you submit the form, and no game data is included.</p>
+      </div>
     </div>
   </aside>
 
   <!-- Paste PGN Modal -->
+  <!-- Keyboard and mouse shortcuts (?) -->
+  <div id="shortcutsBackdrop" class="modal-backdrop hidden">
+    <div class="modal shortcuts-modal" role="dialog" aria-modal="true" aria-labelledby="shortcutsTitle">
+      <div class="modal-header">
+        <h2 id="shortcutsTitle">Shortcuts</h2>
+        <button id="closeShortcutsBtn" class="btn btn-ghost" type="button" aria-label="Close">✕</button>
+      </div>
+      <div class="modal-body shortcuts-body">
+        <section>
+          <h3>Moving through the game</h3>
+          <dl>
+            <dt><kbd>←</kbd> <kbd>→</kbd> or <kbd>K</kbd> <kbd>J</kbd></dt><dd>Previous and next move</dd>
+            <dt><kbd>↑</kbd> <kbd>↓</kbd> or <kbd>Home</kbd> <kbd>End</kbd></dt><dd>Start and end of the game</dd>
+            <dt>Scroll on the board</dt><dd>Step through the moves</dd>
+            <dt><kbd>Space</kbd></dt><dd>Play through the game</dd>
+            <dt><kbd>Esc</kbd></dt><dd>Leave a variation and go back to the game</dd>
+          </dl>
+        </section>
+        <section>
+          <h3>Analysis</h3>
+          <dl>
+            <dt><kbd>X</kbd></dt><dd>Show what the side that just moved threatens</dd>
+            <dt><kbd>F</kbd></dt><dd>Flip the board</dd>
+            <dt><kbd>R</kbd></dt><dd>Retry your mistake</dd>
+            <dt>Hover a move in a line</dt><dd>Preview the position</dd>
+            <dt>Click a move in a line</dt><dd>Play the line to that move</dd>
+          </dl>
+        </section>
+        <section>
+          <h3>Drawing on the board</h3>
+          <dl>
+            <dt>Right-drag</dt><dd>Draw an arrow</dd>
+            <dt>Right-click</dt><dd>Circle a square</dd>
+            <dt><kbd>Shift</kbd> · <kbd>Alt</kbd> · both</dt><dd>Red · blue · yellow instead of green</dd>
+            <dt>Left-click the board</dt><dd>Clear the drawings</dd>
+          </dl>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <!-- Preview of a position in an engine line, shown while a move is hovered -->
+  <div id="linePreview" class="line-preview theme-emerald hidden" aria-hidden="true">
+    <div id="linePreviewBoard" class="line-preview-board"></div>
+    <div id="linePreviewLabel" class="line-preview-label"></div>
+  </div>
+
   <div id="pgnModalBackdrop" class="modal-backdrop hidden">
     <div class="modal">
       <div class="modal-header">
@@ -454,6 +576,10 @@
             <option value="w">White</option>
             <option value="b">Black</option>
           </select>
+        </label>
+        <label class="field field-inline">
+          <input id="pgnPracticeCheck" type="checkbox" checked />
+          <span>Save my mistakes for practice</span>
         </label>
         <label class="field">
           <span>Paste PGN</span>

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { drillHint, drillPrompt, drillRejection, judgeDrillAttempt } from '../drills.js';
+import { drillHint, drillPrompt, drillRejection, drillSuccess, judgeDrillAttempt } from '../drills.js';
 
 const mateReview = {
   bestMoveUci: 'b7b8r', bestSan: 'b8=R', winLoss: 50, classification: { label: 'Blunder' },
@@ -45,4 +45,19 @@ test('mate drills say what to look for', () => {
     judgement: { verdict: 'rejected', reason: 'needs-mate', mate: 4, loss: 0, target: 2 },
   });
   assert.equal(rejection, 'Kf3 mates in 4, but there is a forced mate in 2 here. Look at every check first!');
+});
+
+test('solved drills name the move, and alternatives name the engine move', () => {
+  assert.equal(
+    drillSuccess({ attemptSan: 'Rd8#', judgement: { verdict: 'alternative', mate: 1 }, review: mateReview, deliversMate: true }),
+    'Checkmate! Rd8# ends the game.');
+  assert.equal(
+    drillSuccess({ attemptSan: 'e4', judgement: { verdict: 'best' }, review: plainReview }),
+    "Great find! e4 is Stockfish's top move.");
+  assert.equal(
+    drillSuccess({ attemptSan: 'Rb8', judgement: { verdict: 'alternative', mate: 2 }, review: mateReview }),
+    "Nice! Rb8 also forces mate in 2 (Stockfish's line starts b8=R).");
+  assert.equal(
+    drillSuccess({ attemptSan: 'd4', judgement: { verdict: 'alternative', mate: null }, review: plainReview }),
+    'Nice! d4 is also strong (top engine move was e4).');
 });

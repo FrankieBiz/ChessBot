@@ -1,0 +1,92 @@
+{
+  "engine": "656e304f79b38d9122f9806c156b0e5853bc6083c3c5b1ce567c25d3e6b6ebeb",
+  "input": "c5c63967a445e3d0bb8f583f6f5ce11830506d6b257c1db7cb25c3bfde0dc3c1",
+  "inputRecords": 431,
+  "excludedFromSamplePrefix": 0,
+  "sample": "5656bac148cb0a37b3676405a5a57729c1558e82f4d497606a49a97644421588",
+  "workers": 4,
+  "baseline": {
+    "source": "b5ba0695df23794174628f5388226d9ac772f63d6d6b6335741929403cabcbec",
+    "count": 72,
+    "targetDepth": 16,
+    "medianDepth": 16,
+    "completedAtTargetDepth": 67,
+    "meanWinLoss": 4.779861111111112,
+    "meanAbsoluteWinLossError": 0.7000000000000004,
+    "meanAbsoluteCpLossError": 14.194444444444445,
+    "severeGrades": 8,
+    "exactGradeMatches": 58,
+    "severeGradeMatches": 72,
+    "falseSevere": 0,
+    "missedSevere": 0,
+    "meanNodes": 1205349.388888889,
+    "meanSearches": 2.1666666666666665,
+    "searchConfidence": {
+      "single": 46,
+      "stable": 24,
+      "borderline": 2
+    }
+  },
+  "reference": {
+    "source": "b5ba0695df23794174628f5388226d9ac772f63d6d6b6335741929403cabcbec",
+    "count": 72,
+    "targetDepth": 22,
+    "medianDepth": 22,
+    "completedAtTargetDepth": 72,
+    "meanWinLoss": 4.717361111111112,
+    "meanAbsoluteWinLossError": 0,
+    "meanAbsoluteCpLossError": 0,
+    "severeGrades": 8,
+    "exactGradeMatches": 72,
+    "severeGradeMatches": 72,
+    "falseSevere": 0,
+    "missedSevere": 0,
+    "meanNodes": 6196258.972222222,
+    "meanSearches": 1.3333333333333333,
+    "searchConfidence": {}
+  },
+  "candidate": {
+    "source": "456c7b5c3900641b26d64458cab06ee0c0e8f2117b435c2cca8ffc26f26fdac5",
+    "count": 72,
+    "targetDepth": 16,
+    "medianDepth": 16,
+    "completedAtTargetDepth": 67,
+    "meanWinLoss": 4.643055555555556,
+    "meanAbsoluteWinLossError": 0.5673611111111115,
+    "meanAbsoluteCpLossError": 14.069444444444445,
+    "severeGrades": 8,
+    "exactGradeMatches": 60,
+    "severeGradeMatches": 72,
+    "falseSevere": 0,
+    "missedSevere": 0,
+    "meanNodes": 1283546.736111111,
+    "meanSearches": 2.1944444444444446,
+    "searchConfidence": {
+      "single": 46,
+      "stable": 23,
+      "borderline": 3
+    }
+  },
+  "paired": {
+    "meanAbsoluteWinLossErrorChange": -0.1326388888888889,
+    "approximate95PercentInterval": [
+      -0.392611111111111,
+      0.12733333333333322
+    ],
+    "positionsImproved": 5,
+    "positionsUnchanged": 59,
+    "positionsWorsened": 8
+  },
+  "baselineCommit": "704db0ac8ab070a7fa3c7314bbfe4662b861ad3b",
+  "candidateFiles": {
+    "analysis.js": "d8baeb2efe22d1c5bf8562364f7e268568d70309d781150f7153674ed6042bc4",
+    "engine.js": "3164f25dc86814f152654cece0edd8222f37f12ff935a23c386d141a5117dbe9"
+  },
+  "comparisonsAtDeeperCompletedDepth": 4,
+  "expectedScoreErrorChangesBeyondRounding": {
+    "tolerancePoints": 1e-09,
+    "improved": 1,
+    "unchanged": 71,
+    "worsened": 0
+  }
+}

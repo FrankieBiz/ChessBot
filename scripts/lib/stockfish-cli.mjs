@@ -1,10 +1,13 @@
-// A Web Worker stand-in that runs the bundled Stockfish.js build in a Node child process.
+// A Web Worker stand-in for Stockfish.js or a native UCI reference executable.
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 
 export class StockfishCliWorker {
   constructor(path) {
-    this.process = spawn(process.execPath, [path], { stdio: ["pipe", "pipe", "pipe"] });
+    const isJavaScript = path.endsWith(".js");
+    this.process = spawn(isJavaScript ? process.execPath : path, isJavaScript ? [path] : [], {
+      stdio: ["pipe", "pipe", "pipe"],
+    });
     this.searches = [];
     this.reference = false;
     this.pendingBarrier = null;

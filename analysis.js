@@ -1,6 +1,7 @@
 import { Chess, DEFAULT_POSITION } from "./vendor/chess.js/chess.js";
 import {
   GRADE_LOSS_LIMITS,
+  IncompleteStockfishSearch,
   PIECE_VALUES,
   classifyMove,
   computeMaterialBalanceFromFen,
@@ -34,6 +35,8 @@ export const SEARCH_POLICY = {
 };
 const PASS_AGREEMENT_LOSS = 2.5;
 const SEVERITY_LIMITS = [GRADE_LOSS_LIMITS.inaccuracy, GRADE_LOSS_LIMITS.mistake];
+const DEEP_CHECK_PASSES = [1_500_000, 3_000_000];
+const DEEP_CHECK_MAX_DEPTH = 26;
 
 export function terminalPosition(game, last = false, result) {
   const mate = game.isCheckmate();
@@ -121,28 +124,41 @@ function describePosition(game, fen) {
   };
 }
 
-export function analyzeGamePosition(engine, position, depth, multiPv = 2) {
+export function analyzeGamePosition(engine, position, depth, multiPv = 2, nodes) {
   if (position.terminal) return Promise.resolve(position.terminal);
   return engine.analyzePosition(position.fen, depth, {
-    ...position.searchOptions, multiPv: Math.min(position.legalMoves, multiPv),
+    ...position.searchOptions, multiPv: Math.min(position.legalMoves, multiPv), nodes,
   });
 }
 
 class IncompleteMoveComparison extends Error {}
 
-export async function compareRootMoves(engine, position, playedUci, depth, root) {
+async function searchRootMoves(engine, position, playedUci, depth, searchMoves, nodes) {
+  try {
+    const root = await engine.analyzePosition(position.fen, depth, {
+      ...position.searchOptions, multiPv: searchMoves.length, searchMoves, nodes,
+    });
+    const played = root.lines.find((line) => line.pv[0] === playedUci);
+    return root.lines.length === searchMoves.length && played ? { root, played } : null;
+  } catch (error) {
+    if (error instanceof IncompleteStockfishSearch) return null;
+    throw error;
+  }
+}
+
+export async function compareRootMoves(engine, position, playedUci, depth, root, { allowNarrowerSearch = false, nodes } = {}) {
   const played = root.lines.find((line) => line.pv[0] === playedUci);
   if (played) return { root, played };
 
   const searchMoves = [...new Set([...root.lines.map((line) => line.pv[0]), playedUci])];
-  const compared = await engine.analyzePosition(position.fen, depth, {
-    ...position.searchOptions, multiPv: searchMoves.length, searchMoves,
-  });
-  const comparedPlayed = compared.lines.find((line) => line.pv[0] === playedUci);
-  if (compared.lines.length !== searchMoves.length || !comparedPlayed) {
-    throw new IncompleteMoveComparison("Stockfish did not finish comparing the played move with its alternatives.");
+  const comparison = await searchRootMoves(engine, position, playedUci, depth, searchMoves, nodes);
+  if (comparison) return comparison;
+
+  if (allowNarrowerSearch && searchMoves.length > 2) {
+    const narrower = await searchRootMoves(engine, position, playedUci, depth, [root.bestMove, playedUci], nodes);
+    if (narrower) return { ...narrower, incomplete: true };
   }
-  return { root: compared, played: comparedPlayed };
+  throw new IncompleteMoveComparison("Stockfish did not finish comparing the played move with its alternatives.");
 }
 
 function sacrificeInLine(before, after, played) {
@@ -196,8 +212,9 @@ function agreesAtDepth(previous, current) {
 }
 
 const isPraise = ({ key }) => key === "brilliant" || key === "great";
-const describePass = ({ root, played }, { key, winLoss }) => ({
-  depth: Math.min(root.depth, played.depth), key, winLoss,
+const comparisonDepth = ({ root, played }) => Math.min(root.depth, played.depth);
+const describePass = (comparison, { key, winLoss }) => ({
+  depth: comparisonDepth(comparison), key, winLoss,
 });
 
 export function needsBroaderSearch(previous, current, mode = SEARCH_POLICY.broadPass) {
@@ -214,55 +231,113 @@ export function needsBroaderSearch(previous, current, mode = SEARCH_POLICY.broad
   return SEVERITY_LIMITS.some((limit) => low <= limit && limit <= high);
 }
 
-async function refineDecision(engine, before, after, depth, width, fallback) {
-  const root = await analyzeGamePosition(engine, before, depth, width);
+async function refineDecision(engine, before, after, depth, width, minimumDepth, nodes) {
   try {
-    const comparison = await compareRootMoves(engine, before, after.move.uci, depth, root);
-    return comparison.root.depth > fallback.root.depth ? comparison : null;
+    const root = await analyzeGamePosition(engine, before, depth, width, nodes);
+    if (root.lines.length < Math.min(before.legalMoves, width) ||
+        root.lines.some((line) => line.depth !== root.depth)) return null;
+    // Deep Check uses the actual discovery depth when the node budget cut the search short.
+    if (nodes !== undefined && root.depth <= minimumDepth) return null;
+    const target = nodes === undefined ? depth : root.depth;
+    const comparison = await compareRootMoves(engine, before, after.move.uci, target, root, { nodes });
+    return comparisonDepth(comparison) > minimumDepth &&
+      comparison.root.lines.every((line) => line.depth === comparison.root.depth) ? comparison : null;
   } catch (error) {
-    if (error instanceof IncompleteMoveComparison) return null;
+    if (error instanceof IncompleteMoveComparison || error instanceof IncompleteStockfishSearch) return null;
     throw error;
   }
 }
 
-export async function analyzeDecision(engine, before, after, depth, initialRoot, prevOpponentWinLoss = 0,
-  policy = SEARCH_POLICY) {
+/**
+ * Compare the played move at the review depth. The result says whether deeper passes could change the grade.
+ * Returns { comparison, needsRefinement }; finishDecision runs those passes later.
+ */
+export async function quickDecision(engine, before, after, depth, initialRoot, prevOpponentWinLoss = 0) {
   const root = initialRoot ?? await analyzeGamePosition(engine, before, depth);
-  const baseline = await compareRootMoves(engine, before, after.move.uci, depth, root);
-  if (before.legalMoves < 2) return { ...baseline, searchConfidence: "forced" };
+  const baseline = await compareRootMoves(engine, before, after.move.uci, depth, root, { allowNarrowerSearch: true });
+  if (before.legalMoves < 2) return { comparison: { ...baseline, searchConfidence: "forced" }, needsRefinement: false };
+  const completeBaseline = root.lines.length >= 2 && !baseline.incomplete;
 
-  let previous = signal(before, after, baseline, prevOpponentWinLoss);
+  const previous = signal(before, after, baseline, prevOpponentWinLoss);
   // Each completed pass, for the search-confidence display and the policy benchmark.
   const passes = [describePass(baseline, previous)];
   const practicalLoss = estimateImpact(before, after, baseline.root, baseline.played)?.loss ?? 0;
   const nearBoundary = Object.values(GRADE_LOSS_LIMITS).some((cutoff) => Math.abs(previous.winLoss - cutoff) <= 1);
   const praise = previous.key === "brilliant" || previous.key === "great";
-  if (Math.max(previous.winLoss, practicalLoss) < 5 && baseline.root.pvGap < 10 && !nearBoundary && !praise && !previous.sacrifice) {
-    return { ...baseline, passes, searchConfidence: "single" };
+  if (completeBaseline && Math.max(previous.winLoss, practicalLoss) < 5 && baseline.root.pvGap < 10 &&
+      !nearBoundary && !praise && !previous.sacrifice) {
+    return { comparison: { ...baseline, passes, searchConfidence: "single" }, needsRefinement: false };
   }
+  return { comparison: { ...baseline, passes, searchConfidence: "pending" }, needsRefinement: true, completeBaseline };
+}
 
-  let result = await refineDecision(engine, before, after, depth + policy.confirmDepth, 2, baseline);
+/** Run the deeper passes that quickDecision asked for. A finished quick result comes back unchanged. */
+export async function finishDecision(engine, before, after, depth, quick, prevOpponentWinLoss = 0,
+  policy = SEARCH_POLICY) {
+  if (!quick.needsRefinement) return quick.comparison;
+  const { passes: quickPasses, searchConfidence: _pending, ...baseline } = quick.comparison;
+  const passes = [...quickPasses];
+  let previous = signal(before, after, baseline, prevOpponentWinLoss);
+
+  let result = await refineDecision(engine, before, after, depth + policy.confirmDepth, 2, comparisonDepth(baseline));
   if (!result) return { ...baseline, passes, searchConfidence: "borderline" };
 
+  let completePrevious = quick.completeBaseline;
   let current = signal(before, after, result, prevOpponentWinLoss);
   passes.push(describePass(result, current));
   if (needsBroaderSearch(previous, current, policy.broadPass)) {
-    const broader = await refineDecision(engine, before, after, depth + policy.broadDepth, policy.broadWidth, result);
-    if (broader) {
-      previous = current;
-      result = broader;
-      current = signal(before, after, result, prevOpponentWinLoss);
-      passes.push(describePass(result, current));
-    }
+    const broader = await refineDecision(engine, before, after, depth + policy.broadDepth, policy.broadWidth,
+      comparisonDepth(result));
+    if (!broader) return { ...result, passes, searchConfidence: "borderline" };
+    completePrevious = true;
+    previous = current;
+    result = broader;
+    current = signal(before, after, result, prevOpponentWinLoss);
+    passes.push(describePass(result, current));
   }
   // Praise needs the loss to hold as well; other grades need only the label to hold.
   const agrees = agreesAtDepth(previous, current);
-  const stable = policy.broadPass === "unstable" ? agrees : previous.key === current.key;
+  const stable = completePrevious && (policy.broadPass === "unstable" || isPraise(current)
+    ? agrees : previous.key === current.key);
   return {
     ...result,
     passes,
-    confirmed: agrees && isPraise(current) && result.root.lines.length >= 2,
+    confirmed: completePrevious && agrees && isPraise(current) && result.root.lines.length >= 2,
     searchConfidence: stable ? "stable" : "borderline",
+  };
+}
+
+export async function analyzeDecision(engine, before, after, depth, initialRoot, prevOpponentWinLoss = 0,
+  policy = SEARCH_POLICY) {
+  const quick = await quickDecision(engine, before, after, depth, initialRoot, prevOpponentWinLoss);
+  return finishDecision(engine, before, after, depth, quick, prevOpponentWinLoss, policy);
+}
+
+/** Run an optional deeper check starting from the original comparison's actual depth. */
+export async function deepCheckDecision(engine, before, after, reviewDepth, prevOpponentWinLoss = 0) {
+  if (before.terminal || before.legalMoves < 2 || !after.move) return null;
+
+  const passes = [];
+  const firstTarget = Math.max(18, reviewDepth + 2);
+  let result = null;
+  for (const [index, nodes] of DEEP_CHECK_PASSES.entries()) {
+    const minimumDepth = result ? comparisonDepth(result) : reviewDepth;
+    const target = Math.min(DEEP_CHECK_MAX_DEPTH, firstTarget + index * 2);
+    if (target <= minimumDepth) break;
+    const comparison = await refineDecision(engine, before, after, target, 3, minimumDepth, nodes);
+    if (!comparison) continue;
+    result = comparison;
+    passes.push(describePass(result, signal(before, after, result, prevOpponentWinLoss)));
+  }
+  if (!result) return null;
+
+  const [first, second] = passes;
+  const corroborated = Boolean(second && agreesAtDepth(first, second));
+  return {
+    ...result,
+    passes,
+    confirmed: corroborated && isPraise(second),
+    searchConfidence: corroborated ? "stable" : second ? "borderline" : "single",
   };
 }
 
@@ -288,7 +363,7 @@ export function scoreDecision(before, after, comparison, prevOpponentWinLoss) {
     playedPv: played.pv,
     playedEval: playedEval.eval,
     missedMate: grade.missedMate,
-    depth: root.depth,
+    depth: comparisonDepth(comparison),
     searchConfidence,
   };
 }

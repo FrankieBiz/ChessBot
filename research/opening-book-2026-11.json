@@ -1,0 +1,184 @@
+{
+  "namedOpenings": {
+    "source": "https://github.com/lichess-org/chess-openings",
+    "revision": "48a8c0e733facfdc9a3723fe882e51ec28014074",
+    "license": "CC0-1.0",
+    "lines": 3865,
+    "edges": 8192,
+    "maxPly": 36
+  },
+  "ratedGames": {
+    "source": "https://database.lichess.org/#standard_games",
+    "license": "CC0-1.0",
+    "range": [
+      0,
+      67108863
+    ],
+    "minRatingEachPlayer": 2100,
+    "timeClasses": [
+      "blitz",
+      "rapid",
+      "classical"
+    ],
+    "maxPly": 20,
+    "minOccurrence": 20,
+    "minShare": 0.05,
+    "minMonths": 2,
+    "minOccurrencePerMonth": 5,
+    "edgesAdded": 211,
+    "samples": [
+      {
+        "month": "2026-02",
+        "games": 6330,
+        "sha256": "902c59f9bc30d26805b531c9556835e1f3d043646b731ec999f5d8418b86cd08"
+      },
+      {
+        "month": "2026-05",
+        "games": 6420,
+        "sha256": "ce7210a74da6653433b988087ad311c4bbd1ada198d84234ed141874425e4898"
+      },
+      {
+        "month": "2026-08",
+        "games": 5418,
+        "sha256": "b922312677735f0752dcfadebe895f1f8a5443922e942780b48f4c67cee0683e"
+      }
+    ]
+  },
+  "holdout": {
+    "month": "2026-10",
+    "range": [
+      70160138,
+      137269001
+    ],
+    "sha256": "6399409e7f8eaa22688151eefd78704dc5b378590c60eeac8847549e11166013",
+    "games": 6657,
+    "skipped": 0,
+    "appliedStockfishScreen": false,
+    "byPly": [
+      {
+        "ply": 1,
+        "total": 6657,
+        "named": 6657,
+        "combined": 6657
+      },
+      {
+        "ply": 2,
+        "total": 6657,
+        "named": 6493,
+        "combined": 6505
+      },
+      {
+        "ply": 3,
+        "total": 6655,
+        "named": 5802,
+        "combined": 6082
+      },
+      {
+        "ply": 4,
+        "total": 6650,
+        "named": 4887,
+        "combined": 5369
+      },
+      {
+        "ply": 5,
+        "total": 6647,
+        "named": 4042,
+        "combined": 4513
+      },
+      {
+        "ply": 6,
+        "total": 6645,
+        "named": 3262,
+        "combined": 3538
+      },
+      {
+        "ply": 7,
+        "total": 6645,
+        "named": 2608,
+        "combined": 2875
+      },
+      {
+        "ply": 8,
+        "total": 6642,
+        "named": 1987,
+        "combined": 2215
+      },
+      {
+        "ply": 9,
+        "total": 6638,
+        "named": 1555,
+        "combined": 1662
+      },
+      {
+        "ply": 10,
+        "total": 6633,
+        "named": 1189,
+        "combined": 1244
+      },
+      {
+        "ply": 11,
+        "total": 6628,
+        "named": 868,
+        "combined": 893
+      },
+      {
+        "ply": 12,
+        "total": 6623,
+        "named": 624,
+        "combined": 624
+      },
+      {
+        "ply": 13,
+        "total": 6621,
+        "named": 430,
+        "combined": 430
+      },
+      {
+        "ply": 14,
+        "total": 6616,
+        "named": 272,
+        "combined": 272
+      },
+      {
+        "ply": 15,
+        "total": 6608,
+        "named": 188,
+        "combined": 188
+      },
+      {
+        "ply": 16,
+        "total": 6605,
+        "named": 124,
+        "combined": 124
+      },
+      {
+        "ply": 17,
+        "total": 6600,
+        "named": 100,
+        "combined": 100
+      },
+      {
+        "ply": 18,
+        "total": 6595,
+        "named": 71,
+        "combined": 81
+      },
+      {
+        "ply": 19,
+        "total": 6590,
+        "named": 47,
+        "combined": 55
+      },
+      {
+        "ply": 20,
+        "total": 6583,
+        "named": 30,
+        "combined": 38
+      }
+    ]
+  },
+  "shippedData": {
+    "bytes": 925717,
+    "sha256": "6a76649b025caf1c4894cecddb269fe8574b84d4d80404775d13e525dae9f367"
+  }
+}

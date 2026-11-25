@@ -1,4 +1,6 @@
-import { PIECE_VALUES, computeProGameAccuracy } from "./engine.js";
+import { PIECE_VALUES, computeProGameAccuracy, formatEval } from "./engine.js";
+import { PIECE_NAME, TACTIC_LABEL, describeTactic, tacticName } from "./motifs.js";
+import { describeError } from "./coach-reasons.js";
 
 const PIECE_NAMES = {
   p: "pawn",
@@ -76,6 +78,8 @@ export function generateLocalCoachInsight({
   const isWhite = move.color === "w";
   const oppLabel = isWhite ? "Black" : "White";
   const bestSan = review.bestSan || "";
+  const tactics = review.tactics ?? {};
+  const opponentColor = isWhite ? "b" : "w";
 
   const inspectUci = (fen, uci) => {
     if (!ChessClass || !fen || !uci || uci.length < 4) return null;
@@ -158,6 +162,19 @@ export function generateLocalCoachInsight({
     };
   }
 
+  // A named tactic from Stockfish's line explains a strong move better than the generic praise.
+  const praiseTitle = {
+    brilliant: `${move.san} is Brilliant!`, great: `${move.san} is a Great move!`,
+    best: `${move.san} is the best move`, excellent: `${move.san} is an excellent move`,
+  }[cls.key];
+  if (praiseTitle && tactics.found) {
+    return {
+      title: praiseTitle,
+      text: describeTactic(tactics.found, { owner: "player", color: move.color }),
+      tag: TACTIC_LABEL[tactics.found.kind],
+    };
+  }
+
   // 1. Brilliant (!!)
   if (cls.key === "brilliant") {
     return {
@@ -225,6 +242,56 @@ export function generateLocalCoachInsight({
         ? `A playable move that keeps you in the game, though ${bestSan} offered a bit more activity.`
         : "A solid, practical move that keeps your position together.",
       tag: "Solid Play",
+    };
+  }
+
+  // An error that allows a tactic, or misses one, gets the tactic by name with its squares.
+  const isError = ["inaccuracy", "mistake", "miss", "blunder"].includes(cls.key);
+  if (isError && (tactics.allowed || tactics.missed)) {
+    const { allowed, missed } = tactics;
+    const parts = [];
+    if (allowed) parts.push(describeTactic(allowed, { owner: "opponent", color: opponentColor }));
+    if (missed) parts.push(describeTactic(missed, { owner: "player", color: move.color, missed: true }));
+    else if (bestSan) parts.push(`${bestSan} was the stronger move.`);
+    const lead = allowed ?? missed;
+    const name = tacticName(lead);
+    const article = /^[aeiou]/.test(name) ? "an" : "a";
+    let title = allowed ? `${move.san} allows ${article} ${name}` : `${move.san} missed ${article} ${name}`;
+    if (lead.kind === "free capture") {
+      const [target] = lead.targets;
+      title = allowed
+        ? `${move.san} hangs your ${PIECE_NAME[target.piece]} on ${target.square}`
+        : `${move.san} missed a free ${PIECE_NAME[target.piece]}`;
+    }
+    // Tags feed the weakness report's themes. A Miss keeps its own theme.
+    let tag = allowed ? TACTIC_LABEL[allowed.kind]
+      : missed.kind === "free capture" ? "Missed Free Piece"
+      : missed.kind.endsWith("mate") ? "Missed Mate" : `Missed ${TACTIC_LABEL[missed.kind]}`;
+    if (cls.key === "miss") tag = "Missed Refutation";
+    return { title, text: parts.join(" "), tag };
+  }
+
+  // Otherwise, the verified reasons from Stockfish's lines and the board.
+  const errorTitle = `${move.san} is ${cls.key === "inaccuracy" ? "an Inaccuracy" : `a ${cls.label}`}`;
+  const described = isError ? describeError(review.reasons, { san: move.san, bestSan, color: move.color }) : null;
+  // Without a concrete consequence, the evaluation change and Stockfish's line complete the picture.
+  const evalLine = isError && review.reasons && beforeEvalObj && afterEvalObj
+    ? `Stockfish's evaluation goes from ${formatEval(beforeEvalObj)} to ${formatEval(afterEvalObj)} after ${move.san}.` +
+      `${review.reasons.bestLine ? ` Its best line was ${review.reasons.bestLine}.` : ""}`
+    : "";
+  if (described) {
+    const concrete = review.reasons.consequence || review.reasons.better;
+    return {
+      title: described.title ?? errorTitle,
+      text: concrete || !evalLine ? described.text : `${described.text} ${evalLine}`,
+      tag: cls.key === "miss" ? "Missed Refutation" : described.tag ?? (cls.key === "blunder" ? "Critical Error" : "Positional Slip"),
+    };
+  }
+  if (evalLine && cls.key !== "miss") {
+    return {
+      title: errorTitle,
+      text: evalLine,
+      tag: cls.key === "blunder" ? "Critical Error" : "Positional Slip",
     };
   }
 

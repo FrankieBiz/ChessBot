@@ -1,0 +1,53 @@
+{
+  "method": "Run scripts/benchmark-review-speed.mjs --pgn games.pgn --check. Each game is reviewed at depth 16 by one Stockfish.js 19.0.1 single-threaded engine move by move, as ChessBot 3.7 did, and then by the pooled two-phase review with four engines. With --check, every move is also checked on its own from a cleared search table, and the pooled grade, expected-score loss, and confidence label are compared with it.",
+  "machine": "MacBook Air, Apple M3 (4 performance and 4 efficiency cores, no fan), 16 GB, macOS 26, Node.js 26. Runs were consecutive, and the fanless machine throttles under sustained load.",
+  "games": "Three rated 10+0 Lichess games from 2026-10-01 between players rated 1335-1426 (CC0).",
+  "results": [
+    {
+      "game": "https://lichess.org/oJHcigqo",
+      "plies": 70,
+      "engines": 4,
+      "depth": 16,
+      "oneEngineSeconds": 351.6,
+      "quickPassSeconds": 29.8,
+      "pooledSeconds": 139.3,
+      "identicalMoves": 70
+    },
+    {
+      "game": "https://lichess.org/PERrcovj",
+      "plies": 71,
+      "engines": 4,
+      "depth": 16,
+      "oneEngineSeconds": 136,
+      "quickPassSeconds": 17.3,
+      "pooledSeconds": 69.9,
+      "identicalMoves": 71
+    },
+    {
+      "game": "https://lichess.org/Vg0fM6xz",
+      "plies": 79,
+      "engines": 4,
+      "depth": 16,
+      "oneEngineSeconds": 124.7,
+      "quickPassSeconds": 20.4,
+      "pooledSeconds": 49.4,
+      "identicalMoves": 79
+    }
+  ],
+  "isolatedDecisions": {
+    "source": "the 144-decision search benchmark sample",
+    "identical": 144,
+    "count": 144,
+    "note": "Pooled results matched one uninterrupted analyzeDecision per move from a cleared table. Against the depth-22 reference: 118/144 exact grades, 142/144 severe vs nonsevere, 0.543 points mean loss error."
+  },
+  "rejected": [
+    {
+      "option": "Deeper checks from a cleared table without repeating the quick searches",
+      "result": "118/144 exact, 141/144 severe, 0.806 points mean loss error"
+    },
+    {
+      "option": "Six or eight engines",
+      "result": "no faster than four on this machine"
+    }
+  ]
+}
