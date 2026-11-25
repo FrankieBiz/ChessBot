@@ -85,6 +85,7 @@ test('worker searches are serialized and MultiPV candidates share the same compl
     assert.ok(commands.indexOf('ucinewgame') < commands.findIndex((command) => command.startsWith('position fen')));
     assert.ok(commands.includes('ucinewgame'));
     assert.ok(commands.includes(`position fen ${fen} moves g1f3 g8f6 f3g1 f6g8`));
+    assert.equal(commands.filter((command) => command === 'go depth 9 nodes 63640').length, 2);
   } finally {
     engine.terminate();
     globalThis.Worker = originalWorker;
@@ -108,6 +109,25 @@ test('the deepest complete batch can have a different leader than a later partia
     const result = await search;
     assert.equal(result.depth, 9);
     assert.deepEqual(result.lines.map(({ pv }) => pv[0]), ['d2d4', 'e2e4']);
+  } finally {
+    engine.terminate();
+  }
+});
+
+test('an explicit node limit reaches UCI and invalid budgets are rejected', async () => {
+  const engine = new StockfishEngine('stockfish.js');
+  const commands = [];
+  engine.worker = { postMessage: (command) => commands.push(command), terminate() {} };
+  const fen = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+  for (const nodes of [0, 4_000_001, 'bad']) {
+    assert.throws(() => engine.search(fen, 20, { nodes }), RangeError);
+  }
+  const search = engine.search(fen, 20, { multiPv: 1, nodes: 1_250_000 });
+  try {
+    engine.request.onLine('info depth 10 score cp 40 pv e2e4');
+    engine.request.onLine('bestmove e2e4');
+    await search;
+    assert.equal(commands.at(-1), 'go depth 20 nodes 1250000');
   } finally {
     engine.terminate();
   }

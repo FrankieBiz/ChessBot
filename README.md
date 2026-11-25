@@ -27,8 +27,11 @@ ChessBot is a browser extension that reviews your finished games the way a coach
 - **Full-strength engine, fully local.** Stockfish 19 with its full NNUE network runs in a WebAssembly worker inside the extension. Your games never leave your browser.
 - **Move grades from Brilliant to Blunder.** Grades come from the drop in expected score, not raw centipawns. Positions where the grade is at risk are rechecked with deeper searches, and the move card says when a grade is still uncertain.
 - **Book moves.** See established opening moves and opening names in the review, on the board, and in the move list. The bundled catalog recognizes transpositions offline, and Stockfish still checks the moves.
+- **Opening study.** Find where a game left the book and try common alternatives on the board. The explorer shows game counts and results from rated Lichess games, with playable examples for common positions.
+- **Deep Check.** Run a deeper Stockfish comparison on a selected move, see how its grade changes, and play the deeper line. Game scores and practice drills still reflect the original review.
 - **Accuracy and Decision Quality.** Lichess-style accuracy, average centipawn loss, and separate opening, middlegame, and endgame scores. Decision Quality adds a score that weighs large mistakes more heavily.
-- **Coaching on every move.** A built-in coach points out hanging pieces, missed tactics, king-safety problems, and missed mates. Optional AI explanations use your own key for OpenAI, DeepSeek, Gemini, or any OpenAI-compatible endpoint.
+- **Coaching on every move.** A built-in coach points out hanging pieces, missed tactics, king-safety problems, and missed mates. Show the opponent's reply on the board and play its continuation. Optional AI explanations use your own key for OpenAI, DeepSeek, Gemini, or any OpenAI-compatible endpoint.
+- **Personal performance.** Compare this game's accuracy with your recent median when you have enough saved reviews at the same engine depth and time control.
 - **Practice drills.** The Mistakes tab replays your Mistakes, Misses, and Blunders from the original position. Missed mates come back as drills that only accept a mate at least as fast.
 - **Spaced practice from your own games.** Every Mistake, Miss, and Blunder you make is saved as a puzzle on the Practice page and comes back after 1, 3, 7, 21, and 60 days, mixed across games. Testing yourself on a spaced schedule is one of the two study methods with the strongest research support.
 - **Weakness report.** Across your reviewed games, see which kinds of mistakes you make most, how many come in easy positions, how each game phase goes, what happens when you're low on time, and which won games slipped away. Each finding links to matching puzzles.
@@ -68,7 +71,7 @@ The build writes unpacked extensions to `dist/chrome` and `dist/firefox`, plus a
 
 - **Chess.com:** finish a game, then select **Local Game Review** on the game page.
 - **Any PGN:** select the toolbar icon, choose **Load PGN**, paste the game, pick your color, and select **Analyze Game**.
-- **Depth:** choose from 12 (fast) to 20 (maximum). The default of 16 balances speed and accuracy.
+- **Depth:** choose a whole-game target from 12 to 20, with 16 as the default. Select **Deep Check** on a reviewed move to search it separately.
 - **Keyboard:** <kbd>←</kbd> <kbd>→</kbd> step through moves, <kbd>Space</kbd> plays the game, <kbd>F</kbd> flips the board, <kbd>R</kbd> retries a drill, and <kbd>Esc</kbd> returns to the main line.
 - **Practice:** select **Practice** in the review header. Puzzles from a game first come due the day after you review it. When you paste a PGN you only want to study, untick **Save my mistakes for practice**.
 
@@ -101,7 +104,9 @@ ChessBot's grading rules and models are tested against deeper searches and held-
 | `review.html`, `review.js`, `review.css` | The review page: board, move card, summary, drills, and settings |
 | `engine.js`, `analysis.js` | Stockfish worker control, move grading, and adaptive search |
 | `opening-book.js`, `opening-book-data.js` | Offline opening recognition and the Lichess opening catalog |
+| `opening-explorer.js`, `opening-explorer-data.js` | Sampled opening results and playable example continuations |
 | `coach.js`, `coach-api.js`, `tactics.js` | Built-in coaching text, optional AI explanations, and missed-mate detection |
+| `coach-evidence.js`, `performance.js` | Board evidence for coaching and game performance context |
 | `drills.js`, `variation.js` | Drill checking and variation replay |
 | `practice.html`, `practice.js`, `practice.css` | The Practice page: daily review, theme practice, and the weakness report |
 | `deck.js`, `weakness.js`, `training-store.js` | Spaced-review schedule, weakness report, and saved practice data |

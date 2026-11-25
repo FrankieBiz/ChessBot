@@ -240,6 +240,8 @@ export function summarizeLines(lines, turn) {
   };
 }
 
+const MAX_SEARCH_NODES = 4_000_000;
+
 export class IncompleteStockfishSearch extends Error {}
 
 export class StockfishEngine {
@@ -328,7 +330,13 @@ export class StockfishEngine {
     return this.enqueue(() => this.search(fen, depth, options));
   }
 
-  search(fen, depth, { initialFen = fen, history = [], searchMoves = [], multiPv = 2 } = {}) {
+  search(fen, depth, {
+    initialFen = fen, history = [], searchMoves = [], multiPv = 2,
+    nodes = Math.min(MAX_SEARCH_NODES, Math.round(90_000 * 2 ** ((depth - 10) / 2))),
+  } = {}) {
+    if (!Number.isInteger(nodes) || nodes < 1 || nodes > MAX_SEARCH_NODES) {
+      throw new RangeError(`Stockfish node budget must be an integer from 1 to ${MAX_SEARCH_NODES}`);
+    }
     const turn = fen.split(" ")[1];
     const exactLeaders = new Map();
     let iteration = [];
@@ -365,7 +373,6 @@ export class StockfishEngine {
     const played = history.length ? ` moves ${history.join(" ")}` : "";
     const restrict = searchMoves.length ? ` searchmoves ${searchMoves.join(" ")}` : "";
     this.worker.postMessage(`position fen ${initialFen}${played}`);
-    const nodes = Math.min(4_000_000, Math.round(90_000 * 2 ** ((depth - 10) / 2)));
     this.worker.postMessage(`go depth ${depth} nodes ${nodes}${restrict}`);
     return response;
   }

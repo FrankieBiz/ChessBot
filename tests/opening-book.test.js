@@ -39,12 +39,18 @@ test('a frequent continuation from high-rated games fills a gap in the named lin
   assert.match(book[8]?.name ?? '', /Sicilian Defense/);
 });
 
-test('game-derived continuations are limited to the first twenty plies', () => {
-  const shuffles = '1. Na3 Na6 2. Nb1 Nb8 3. Na3 Na6 4. Nb1 Nb8 5. Na3 Na6 6. Nb1 Nb8 7. Na3 Na6 8. Nb1 Nb8';
-  const book = reviewBook(`${shuffles} 9. e4 c5 10. Nf3 Nc6 11. d4 cxd4 12. Nxd4 e6 *`);
+test('named moves can stay in book past the game-derived ply limit', () => {
+  const delayedSicilian = (count) => {
+    const shuffles = Array.from({ length: count }, (_, index) =>
+      `${2 * index + 1}. Na3 Na6 ${2 * index + 2}. Nb1 Nb8`).join(' ');
+    const start = count * 2 + 1;
+    return reviewBook(`${shuffles} ${start}. e4 c5 ${start + 1}. Nf3 Nc6 ${start + 2}. d4 cxd4 ${start + 3}. Nxd4 e6 *`);
+  };
 
-  assert.ok(book[23]);
-  assert.equal(book[24], null);
+  assert.ok(delayedSicilian(4)[24]);
+  const late = delayedSicilian(5);
+  assert.ok(late[27]);
+  assert.equal(late[28], null);
 });
 
 test('setup positions do not receive book classifications', () => {

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { analyzeDecision, compareRootMoves, parseReviewGame, scoreDecision } from '../analysis.js';
+import { analyzeDecision, compareRootMoves, deepCheckDecision, parseReviewGame, scoreDecision } from '../analysis.js';
 import { StockfishEngine, summarizeLines } from '../engine.js';
 
 const line = (uci, winWhite, cp, depth = 14, continuation = []) => ({
@@ -254,4 +254,75 @@ test('the broad pass runs when the label is at risk and skips stable same-grade 
   assert.equal(needsBroaderSearch(pass('mistake', 12), pass('mistake', 10.5)), false);
   assert.equal(needsBroaderSearch(pass('blunder', 35), pass('blunder', 31), 'unstable'), true);
   assert.equal(needsBroaderSearch(pass('mistake', 19), pass('blunder', 21), 'never'), false);
+});
+
+test('Deep Check reranks the played move at the discovery depth and flags a changed grade', async () => {
+  const { positions: [before, after] } = parseReviewGame('1. a3 *');
+  const searches = [];
+  const engine = { analyzePosition(fen, depth, { multiPv, nodes, searchMoves }) {
+    searches.push({ depth, multiPv, nodes, searchMoves });
+    if (!searchMoves) return summarizeLines([
+      line('e2e4', 70, 155, depth - 1), line('d2d4', 62, 110, depth - 1),
+      line('c2c4', 59, 90, depth - 1),
+    ], 'w');
+    const played = line('a2a3', depth === 17 ? 48 : 53, 25, depth);
+    return summarizeLines([
+      line('e2e4', 69, 154, depth), line('d2d4', 63, 110, depth), line('c2c4', 59, 90, depth), played,
+    ], 'w');
+  } };
+  const comparison = await deepCheckDecision(engine, before, after, 16, 0);
+  assert.deepEqual(searches.map(({ depth, multiPv }) => [depth, multiPv]), [[18, 3], [17, 4], [20, 3], [19, 4]]);
+  assert.equal(searches.reduce((sum, { nodes }) => sum + nodes, 0), 9_000_000);
+  assert.deepEqual(searches[1].searchMoves, ['e2e4', 'd2d4', 'c2c4', 'a2a3']);
+  assert.deepEqual(comparison.passes, [
+    { depth: 17, key: 'blunder', winLoss: 21 }, { depth: 19, key: 'mistake', winLoss: 16 },
+  ]);
+  assert.equal(comparison.searchConfidence, 'borderline');
+  assert.equal(scoreDecision(before, after, comparison, 0).depth, 19);
+});
+
+test('Deep Check declines truncated, mixed-depth, and non-deeper evidence', async () => {
+  const { positions: [before, after] } = parseReviewGame('1. a3 *');
+  const incomplete = summarizeLines([line('a2a3', 60, 90, 20)], 'w');
+  const mixed = summarizeLines([
+    line('e2e4', 70, 150, 21), line('a2a3', 60, 90, 20), line('d2d4', 55, 45, 21),
+  ], 'w');
+  const shallower = summarizeLines([
+    line('e2e4', 70, 150, 16), line('a2a3', 60, 90, 16), line('d2d4', 55, 45, 16),
+  ], 'w');
+  for (const root of [incomplete, mixed, shallower]) {
+    const engine = { analyzePosition() { return root; } };
+    assert.equal(await deepCheckDecision(engine, before, after, 16, 0), null);
+  }
+});
+
+test('Deep Check accepts a single complete mating comparison and skips a forced move', async () => {
+  const pgn = '[SetUp "1"]\n[FEN "8/8/8/8/8/5kq1/8/7K b - - 0 19"]\n[Result "0-1"]\n\n19... Qg2# 0-1';
+  const { positions: [before, after] } = parseReviewGame(pgn);
+  const mate = { ...line('g3g2', 0, 0, 21), eval: { type: 'mate', value: -1 } };
+  const full = summarizeLines([mate, line('g3h3', 2, -480, 21), line('g3g1', 9, -260, 21)], 'b');
+  let searches = 0;
+  const engine = { analyzePosition() { return searches++ === 0 ? full : summarizeLines([mate], 'b'); } };
+  const comparison = await deepCheckDecision(engine, before, after, 20, 0);
+  assert.equal(comparison.searchConfidence, 'single');
+  assert.equal(comparison.confirmed, false);
+  assert.deepEqual(scoreDecision(before, after, comparison, 0).playedEval, { type: 'mate', value: -1 });
+  const forcedPgn = '[SetUp "1"]\n[FEN "7k/8/8/8/8/8/6q1/7K w - - 0 1"]\n\n1. Kxg2 1/2-1/2';
+  const { positions: [forcedBefore, forcedAfter] } = parseReviewGame(forcedPgn);
+  assert.equal(forcedBefore.legalMoves, 1);
+  assert.equal(await deepCheckDecision(engine, forcedBefore, forcedAfter, 20, 0), null);
+  assert.equal(searches, 2);
+});
+
+test('Deep Check corroborates praise from two distinct deeper depths', async () => {
+  const { positions: [before, after] } = parseReviewGame('1. e4 *');
+  const engine = { analyzePosition(fen, depth) {
+    return summarizeLines([
+      line('e2e4', 68, 155, depth), line('d2d4', 42, -44, depth), line('c2c4', 40, -60, depth),
+    ], 'w');
+  } };
+  const comparison = await deepCheckDecision(engine, before, after, 12);
+  assert.deepEqual(comparison.passes.map(({ depth }) => depth), [18, 20]);
+  assert.equal(comparison.searchConfidence, 'stable');
+  assert.equal(scoreDecision(before, after, comparison, 0).classification.key, 'great');
 });

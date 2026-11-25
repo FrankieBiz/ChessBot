@@ -2,6 +2,43 @@
 
 Each model and search rule in ChessBot was fitted on one set of games and measured on games it had not seen. The sections below give the results and the commands to reproduce them. Raw outputs and source hashes are in [`research/`](../research/). For what each model does in the extension, see [methodology.md](methodology.md).
 
+## Opening explorer and expanded coverage
+
+ChessBot 3.7 uses 153,664 rated standard blitz, rapid, and classical games with both players rated at least 2100. The sample spans eight monthly archive prefixes in 2026. The 8,192 named position-move pairs stay in the book. Game-derived coverage grows from 211 to 5,774 pairs by sampling more games and extending the lookup through ply 26. Inclusion still requires at least 20 games, 5% of the observed moves played at that position, and five games in each of two or more months. [Lichess rated archive](https://database.lichess.org/#standard_games) · [Lichess opening lines](https://github.com/lichess-org/chess-openings/tree/48a8c0e733facfdc9a3723fe882e51ec28014074)
+
+The explorer gives White-win, draw, and Black-win counts for up to eight choices from each position, based on at least 20 observations at the position and five for the choice. The counts describe this high-rated Lichess sample. ChessBot uses the same engine checks for Book labels as in 3.6.
+
+The 6,657-game October holdout uses the same independent block as the 3.6 benchmark. Book columns report exact played moves found in each catalog before the engine check. The explorer column reports positions with at least one sampled alternative. Coverage is highest in the first few moves and falls in deeper, less common positions. [Per-ply counts and source hashes](../research/opening-explorer-2026-11.json)
+
+| Ply | 3.6 Book | 3.7 Book | Explorer |
+| ---: | ---: | ---: | ---: |
+| 4 | 80.7% | 90.3% | 97.3% |
+| 6 | 53.2% | 72.9% | 86.5% |
+| 8 | 33.3% | 50.9% | 66.9% |
+| 10 | 18.8% | 31.7% | 45.1% |
+| 12 | 9.4% | 17.3% | 28.0% |
+| 16 | 1.9% | 4.0% | 6.6% |
+| 20 | 0.6% | 0.9% | 1.4% |
+
+To rebuild the bundled catalogs, use `npm ci`, `curl`, and `zstd`. Run these commands from the repository root. The generator checks the SHA-256 of each input, replays the PGNs, and compares the catalogs on the October block.
+
+```sh
+opening_archive_dir=$(mktemp -d)
+for month in 2026-01 2026-02 2026-03 2026-04 2026-05 2026-06 2026-08 2026-09; do
+  case "$month" in
+    2026-02|2026-05|2026-08) bytes=67108864 ;;
+    *) bytes=268435456 ;;
+  esac
+  curl --fail --location --retry 2 --range "0-$((bytes - 1))" --max-filesize "$bytes" \
+    "https://database.lichess.org/standard/lichess_db_standard_rated_${month}.pgn.zst" \
+    --output "${opening_archive_dir}/${month}.pgn.zst" || exit 1
+done
+curl --fail --location --range 70160138-137269001 --max-filesize 67108864 \
+  "https://database.lichess.org/standard/lichess_db_standard_rated_2026-10.pgn.zst" \
+  --output "${opening_archive_dir}/2026-10.pgn.zst" || exit 1
+node scripts/build-opening-book.mjs "${opening_archive_dir}" "${opening_archive_dir}/2026-10.pgn.zst"
+```
+
 ## Opening book coverage
 
 Replaying 3,865 named Lichess opening lines gives 8,192 position-move pairs. The first 64 MiB of each February, May, and August 2026 Lichess rated archive yielded 18,168 human blitz, rapid, and classical games with both players rated at least 2100. The generator adds moves through ply 20 if at least 20 games played the move, it accounted for at least 5% of plays from that position, and at least five games played it in each of two months. This adds 211 pairs and 1.4 KiB to the gzip-compressed data module. Both data sources are released under CC0. [Lichess opening lines](https://github.com/lichess-org/chess-openings/tree/48a8c0e733facfdc9a3723fe882e51ec28014074) · [Lichess rated archives](https://database.lichess.org/#standard_games)
@@ -19,7 +56,7 @@ A separate October 2026 block contained 6,657 eligible games. Each row gives the
 | 12 | 9.4% | 9.4% |
 | 20 | 0.5% | 0.6% |
 
-To regenerate the catalog and print the October results, use `npm ci` and `zstd`, then run these commands from the repository root. The generator checks the three source archive hashes.
+To regenerate this catalog and print the October results, use a checkout of ChessBot 3.6 at `bcc32d8`. Install dependencies with `npm ci`, make `zstd` available, then run these commands from that checkout. The generator checks the three source archive hashes.
 
 ```sh
 opening_archive_dir=$(mktemp -d)
@@ -214,4 +251,20 @@ To reproduce the comparison, generate the October sample as above and point the 
 ```sh
 node scripts/benchmark-review.mjs --input review-positions.jsonl \
   --baseline /path/to/v3.5.0 --candidate . --cache /tmp/chessbot-v36-review-cache --count 72
+```
+
+### Optional Deep Check (v3.7)
+
+The audit uses the first rated Bullet, Blitz, and Rapid game in a separate September 2026 Lichess prefix with 24 to 38 plies and at least two discretionary decisions in each phase. Each game is reviewed from start to finish at the normal depth-16 target, keeping the search table and previous opponent loss between moves. Every discretionary decision then receives a Deep Check on a cleared copy of the packaged WASM engine. The reference uses official native Stockfish 19 at uncapped depth 22, with a fresh shortlist and the played move compared at the same root and depth. All three grades use the opponent-loss context from the original review. [Lichess CC0 archive](https://database.lichess.org/#standard_games) · [Stockfish 19 release](https://github.com/official-stockfish/Stockfish/releases/tag/sf_19)
+
+Deep Check can issue up to 9 million nodes of cumulative search budget across two passes. It returns a result only when it finds a complete comparison deeper than the original. The deepest returned comparison can stand alone or be corroborated by a separate completed depth. The comparison below uses the initial grade wherever Deep Check found no deeper result. Difficulty groups use the cohort find-rate estimate from the initial review, with 70% and above classed as easy, 40% through 69% as moderate, and lower values as difficult. Early positions and mate evaluations can lack an estimate.
+
+To reproduce the audit, use `npm ci`, `npm test` to prepare the chess.js vendor module, `zstd`, and the official native Stockfish 19 release for your platform. The sample here starts at the beginning of the archive and uses its first 16 MiB.
+
+```sh
+curl --fail --location --range 0-16777215 --max-filesize 16777216 \
+  https://database.lichess.org/standard/lichess_db_standard_rated_2026-09.pgn.zst \
+  --output 2026-09.pgn.zst
+node scripts/benchmark-deep-check.mjs --archive 2026-09.pgn.zst \
+  --reference-stockfish /path/to/stockfish --workers 5
 ```

@@ -4,6 +4,20 @@ All notable changes to ChessBot are recorded here. The format follows [Keep a Ch
 
 ## [Unreleased]
 
+## [3.7.0] - 2026-11-24
+
+### Added
+
+- **Opening study** identifies where a game departed from the book and shows common alternatives with sample counts and results. Try a move or play an example continuation offline.
+- **Deep Check** gives a selected move a larger Stockfish search budget. It reports the completed depth, any grade change, and a playable continuation.
+- Coach cards can highlight the opponent's reply and its target square, then play through the verified continuation.
+- Performance can compare a completed review with the player's median across comparable saved games.
+
+### Changed
+
+- Expanded recorded opening coverage with 153,664 rated Lichess games across eight months. On the held-out sample, lookup coverage at ply 8 rose from 33.3% to 50.9% before Stockfish screening.
+- The move card now shows the completed search depth and whether the grade came from one comparison, agreed across depths, or remained uncertain.
+
 ## [3.6.0] - 2026-11-24
 
 ### Added
@@ -55,7 +69,8 @@ All notable changes to ChessBot are recorded here. The format follows [Keep a Ch
 
 This is the first version in this repository. Earlier releases (3.1 and 3.2) were developed before version control. It includes local Stockfish 19 review, move grades, Lichess-style accuracy, Decision Quality, the built-in coach with optional AI explanations, the Mistakes trainer, clock-aware practical impact, and the cohort difficulty model.
 
-[Unreleased]: https://github.com/FrankieBiz/ChessBot/compare/v3.6.0...HEAD
+[Unreleased]: https://github.com/FrankieBiz/ChessBot/compare/v3.7.0...HEAD
+[3.7.0]: https://github.com/FrankieBiz/ChessBot/compare/v3.6.0...v3.7.0
 [3.6.0]: https://github.com/FrankieBiz/ChessBot/compare/v3.5.0...v3.6.0
 [3.5.0]: https://github.com/FrankieBiz/ChessBot/compare/v3.4.0...v3.5.0
 [3.4.0]: https://github.com/FrankieBiz/ChessBot/compare/v3.3.0...v3.4.0

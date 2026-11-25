@@ -221,9 +221,24 @@
               <button id="showBestLineBtn" class="btn btn-sm btn-secondary hidden" type="button">
                 Show Best Line
               </button>
+              <button id="deepCheckBtn" class="btn btn-sm btn-secondary" type="button" aria-controls="deepCheckResult" title="Use a separate, deeper Stockfish search on this game move">Deep Check</button>
               <button id="explainMistakeBtn" class="btn btn-sm btn-coach hidden" type="button">
                 AI Deep Explain
               </button>
+            </div>
+
+            <div id="coachReply" class="move-evidence hidden">
+              <p id="coachReplyText"></p>
+              <div class="coach-actions">
+                <button id="showReplyBtn" class="btn btn-sm btn-secondary" type="button" aria-pressed="false">Show on board</button>
+                <button id="playReplyBtn" class="btn btn-sm btn-secondary" type="button">Play reply line</button>
+              </div>
+            </div>
+
+            <div id="deepCheckResult" class="move-evidence deep-evidence hidden" role="status">
+              <p id="deepCheckStatus"></p>
+              <p id="deepCheckLine" class="deep-evidence-line"></p>
+              <button id="playDeepLineBtn" class="btn btn-sm btn-secondary hidden" type="button">Play deeper line</button>
             </div>
 
             <div id="aiCoachOutput" class="coach-output hidden">
@@ -231,6 +246,16 @@
               <p id="aiCoachText"></p>
             </div>
           </div>
+
+          <details id="openingStudy" class="opening-study hidden">
+            <summary>Opening study <span id="openingStudyName"></span></summary>
+            <div class="opening-study-content">
+              <p id="openingDeparture"></p>
+              <button id="openingDepartureBtn" class="btn btn-sm btn-secondary hidden" type="button">Go to departure</button>
+              <div id="openingChoices" class="opening-choices"></div>
+              <p id="openingSample" class="opening-sample"></p>
+            </div>
+          </details>
 
           <!-- Evaluation Graph + Key Moments -->
           <div class="section-block">
@@ -294,6 +319,12 @@
                 </div>
               </div>
             </div>
+
+            <section id="performanceContext" class="performance-context hidden" aria-label="Performance context">
+              <p id="peerWhiteContext" class="hidden"></p>
+              <p id="peerBlackContext" class="hidden"></p>
+              <p id="personalContext" class="hidden"></p>
+            </section>
 
             <div id="phaseStrip" class="phase-strip hidden">
               <div class="phase-item">

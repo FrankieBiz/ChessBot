@@ -35,6 +35,8 @@ export const SEARCH_POLICY = {
 };
 const PASS_AGREEMENT_LOSS = 2.5;
 const SEVERITY_LIMITS = [GRADE_LOSS_LIMITS.inaccuracy, GRADE_LOSS_LIMITS.mistake];
+const DEEP_CHECK_PASSES = [1_500_000, 3_000_000];
+const DEEP_CHECK_MAX_DEPTH = 26;
 
 export function terminalPosition(game, last = false, result) {
   const mate = game.isCheckmate();
@@ -122,19 +124,19 @@ function describePosition(game, fen) {
   };
 }
 
-export function analyzeGamePosition(engine, position, depth, multiPv = 2) {
+export function analyzeGamePosition(engine, position, depth, multiPv = 2, nodes) {
   if (position.terminal) return Promise.resolve(position.terminal);
   return engine.analyzePosition(position.fen, depth, {
-    ...position.searchOptions, multiPv: Math.min(position.legalMoves, multiPv),
+    ...position.searchOptions, multiPv: Math.min(position.legalMoves, multiPv), nodes,
   });
 }
 
 class IncompleteMoveComparison extends Error {}
 
-async function searchRootMoves(engine, position, playedUci, depth, searchMoves) {
+async function searchRootMoves(engine, position, playedUci, depth, searchMoves, nodes) {
   try {
     const root = await engine.analyzePosition(position.fen, depth, {
-      ...position.searchOptions, multiPv: searchMoves.length, searchMoves,
+      ...position.searchOptions, multiPv: searchMoves.length, searchMoves, nodes,
     });
     const played = root.lines.find((line) => line.pv[0] === playedUci);
     return root.lines.length === searchMoves.length && played ? { root, played } : null;
@@ -144,16 +146,16 @@ async function searchRootMoves(engine, position, playedUci, depth, searchMoves) 
   }
 }
 
-export async function compareRootMoves(engine, position, playedUci, depth, root, { allowNarrowerSearch = false } = {}) {
+export async function compareRootMoves(engine, position, playedUci, depth, root, { allowNarrowerSearch = false, nodes } = {}) {
   const played = root.lines.find((line) => line.pv[0] === playedUci);
   if (played) return { root, played };
 
   const searchMoves = [...new Set([...root.lines.map((line) => line.pv[0]), playedUci])];
-  const comparison = await searchRootMoves(engine, position, playedUci, depth, searchMoves);
+  const comparison = await searchRootMoves(engine, position, playedUci, depth, searchMoves, nodes);
   if (comparison) return comparison;
 
   if (allowNarrowerSearch && searchMoves.length > 2) {
-    const narrower = await searchRootMoves(engine, position, playedUci, depth, [root.bestMove, playedUci]);
+    const narrower = await searchRootMoves(engine, position, playedUci, depth, [root.bestMove, playedUci], nodes);
     if (narrower) return { ...narrower, incomplete: true };
   }
   throw new IncompleteMoveComparison("Stockfish did not finish comparing the played move with its alternatives.");
@@ -229,12 +231,17 @@ export function needsBroaderSearch(previous, current, mode = SEARCH_POLICY.broad
   return SEVERITY_LIMITS.some((limit) => low <= limit && limit <= high);
 }
 
-async function refineDecision(engine, before, after, depth, width, fallback) {
+async function refineDecision(engine, before, after, depth, width, minimumDepth, nodes) {
   try {
-    const root = await analyzeGamePosition(engine, before, depth, width);
-    if (root.lines.length < Math.min(before.legalMoves, width)) return null;
-    const comparison = await compareRootMoves(engine, before, after.move.uci, depth, root);
-    return comparisonDepth(comparison) > comparisonDepth(fallback) ? comparison : null;
+    const root = await analyzeGamePosition(engine, before, depth, width, nodes);
+    if (root.lines.length < Math.min(before.legalMoves, width) ||
+        root.lines.some((line) => line.depth !== root.depth)) return null;
+    // Deep Check uses the actual discovery depth when the node budget cut the search short.
+    if (nodes !== undefined && root.depth <= minimumDepth) return null;
+    const target = nodes === undefined ? depth : root.depth;
+    const comparison = await compareRootMoves(engine, before, after.move.uci, target, root, { nodes });
+    return comparisonDepth(comparison) > minimumDepth &&
+      comparison.root.lines.every((line) => line.depth === comparison.root.depth) ? comparison : null;
   } catch (error) {
     if (error instanceof IncompleteMoveComparison || error instanceof IncompleteStockfishSearch) return null;
     throw error;
@@ -259,14 +266,15 @@ export async function analyzeDecision(engine, before, after, depth, initialRoot,
     return { ...baseline, passes, searchConfidence: "single" };
   }
 
-  let result = await refineDecision(engine, before, after, depth + policy.confirmDepth, 2, baseline);
+  let result = await refineDecision(engine, before, after, depth + policy.confirmDepth, 2, comparisonDepth(baseline));
   if (!result) return { ...baseline, passes, searchConfidence: "borderline" };
 
   let completePrevious = completeBaseline;
   let current = signal(before, after, result, prevOpponentWinLoss);
   passes.push(describePass(result, current));
   if (needsBroaderSearch(previous, current, policy.broadPass)) {
-    const broader = await refineDecision(engine, before, after, depth + policy.broadDepth, policy.broadWidth, result);
+    const broader = await refineDecision(engine, before, after, depth + policy.broadDepth, policy.broadWidth,
+      comparisonDepth(result));
     if (!broader) return { ...result, passes, searchConfidence: "borderline" };
     completePrevious = true;
     previous = current;
@@ -283,6 +291,34 @@ export async function analyzeDecision(engine, before, after, depth, initialRoot,
     passes,
     confirmed: completePrevious && agrees && isPraise(current) && result.root.lines.length >= 2,
     searchConfidence: stable ? "stable" : "borderline",
+  };
+}
+
+/** Run an optional deeper check starting from the original comparison's actual depth. */
+export async function deepCheckDecision(engine, before, after, reviewDepth, prevOpponentWinLoss = 0) {
+  if (before.terminal || before.legalMoves < 2 || !after.move) return null;
+
+  const passes = [];
+  const firstTarget = Math.max(18, reviewDepth + 2);
+  let result = null;
+  for (const [index, nodes] of DEEP_CHECK_PASSES.entries()) {
+    const minimumDepth = result ? comparisonDepth(result) : reviewDepth;
+    const target = Math.min(DEEP_CHECK_MAX_DEPTH, firstTarget + index * 2);
+    if (target <= minimumDepth) break;
+    const comparison = await refineDecision(engine, before, after, target, 3, minimumDepth, nodes);
+    if (!comparison) continue;
+    result = comparison;
+    passes.push(describePass(result, signal(before, after, result, prevOpponentWinLoss)));
+  }
+  if (!result) return null;
+
+  const [first, second] = passes;
+  const corroborated = Boolean(second && agreesAtDepth(first, second));
+  return {
+    ...result,
+    passes,
+    confirmed: corroborated && isPraise(second),
+    searchConfidence: corroborated ? "stable" : second ? "borderline" : "single",
   };
 }
 
