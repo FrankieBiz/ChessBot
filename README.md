@@ -5,47 +5,106 @@
 <h1 align="center">ChessBot</h1>
 
 <p align="center">
-  <strong>Private, offline game review for Chess.com games and PGNs, powered by full-strength Stockfish 19 in your browser.</strong>
+  <strong>Private game review for Chess.com games and PGNs, with full-strength Stockfish 19 running in your browser.</strong><br>
+  Every move graded and explained. Your mistakes become practice. Nothing leaves your computer.
 </p>
 
 <p align="center">
-  <a href="https://github.com/FrankieBiz/ChessBot/actions/workflows/ci.yml"><img src="https://github.com/FrankieBiz/ChessBot/actions/workflows/ci.yml/badge.svg" alt="CI status"></a>
   <a href="https://github.com/FrankieBiz/ChessBot/releases/latest"><img src="https://img.shields.io/github/v/release/FrankieBiz/ChessBot?sort=semver" alt="Latest release"></a>
+  <a href="https://github.com/FrankieBiz/ChessBot/actions/workflows/ci.yml"><img src="https://github.com/FrankieBiz/ChessBot/actions/workflows/ci.yml/badge.svg" alt="CI status"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue" alt="License: GPL-3.0"></a>
   <img src="https://img.shields.io/badge/engine-Stockfish%2019-2e7d32" alt="Engine: Stockfish 19">
   <img src="https://img.shields.io/badge/browsers-Chrome%20%7C%20Firefox-555" alt="Browsers: Chrome and Firefox">
 </p>
 
 <p align="center">
-  <img src="docs/images/review-move.png" alt="ChessBot reviewing the 1858 Opera Game. The move card shows Stockfish's top lines, how often players find a sound move, and the most tempting mistake." width="900">
+  <a href="#install">Install</a> ·
+  <a href="#a-tour-of-chessbot">Tour</a> ·
+  <a href="#usage">Usage</a> ·
+  <a href="#accuracy-you-can-check">Accuracy</a> ·
+  <a href="#privacy">Privacy</a> ·
+  <a href="CHANGELOG.md">Changelog</a>
 </p>
 
-ChessBot is a browser extension that reviews your finished games the way a coach would. Every move gets a grade, an explanation, and Stockfish's best continuation. Your mistakes become practice drills. The engine runs entirely on your computer, so there is no account, no upload, and no waiting in a server queue.
+<p align="center">
+  <img src="docs/images/review-move.png" alt="ChessBot reviewing the 1858 Opera Game. The move card names the mistake, explains it, and shows Stockfish's top lines, how often players find a sound move, and the most tempting mistake." width="900">
+</p>
 
-## Features
+ChessBot is a browser extension that reviews your finished games the way a coach would. Every move gets a grade, a reason, and Stockfish's best continuation. Your mistakes come back as spaced practice. The engine runs entirely on your computer, so there is no account, no upload, and no waiting in a server queue.
 
-- **Full-strength engine, fully local.** Stockfish 19 with its full NNUE network runs in WebAssembly workers inside the extension, up to four at once. Your games never leave your browser.
-- **Fast first look.** A quick pass grades the whole game first, so the summary, graph, and move list appear in well under a minute. Close calls are then checked deeper in the background, and their grades are marked until the check finishes.
-- **Move grades from Brilliant to Blunder.** Grades come from the drop in expected score, not raw centipawns. Positions where the grade is at risk are rechecked with deeper searches, and the move card says when a grade is still uncertain.
-- **Book moves.** See established opening moves and opening names in the review, on the board, and in the move list. The bundled catalog recognizes transpositions offline, and Stockfish still checks the moves.
-- **Opening study.** Find where a game left the book and try common alternatives on the board. The explorer shows game counts and results from rated Lichess games, with playable examples for common positions.
-- **Deep Check.** Run a deeper Stockfish comparison on a selected move, see how its grade changes, and play the deeper line. Game scores and practice drills still reflect the original review.
-- **Game chart.** A Lichess-style advantage chart with game phases and marked mistakes. Click or drag along it to move through the game. Games with clocks add a move-times chart.
-- **Analysis board tools.** The move list comments on each mistake with the best move and Stockfish's line. Hover any move in an engine line to preview it, and click to play it. Press <kbd>X</kbd> to see what your opponent threatens. Draw arrows and circles with the right mouse button. Copy or download the game as annotated PGN with evaluations, clock times, and better lines.
-- **Accuracy and Decision Quality.** Lichess-style accuracy, average centipawn loss, and separate opening, middlegame, and endgame scores. Decision Quality adds a score that weighs large mistakes more heavily.
-- **Coaching on every move.** Every mistake gets a concrete reason: the tactic it allows or misses (forks, pins, skewers, discovered attacks and checks, double checks, back-rank mates, hanging pieces), the material Stockfish's reply wins and why the piece fell, checks against your king, a missed recapture, or what the better move does. Each reason is checked on the board and in Stockfish's lines; when none applies, the card shows the evaluation change and the best line. Show the opponent's reply on the board and play its continuation. Optional AI explanations use your own key for OpenAI, DeepSeek, Gemini, or any OpenAI-compatible endpoint.
-- **Personal performance.** Compare this game's accuracy with your recent median when you have enough saved reviews at the same engine depth and time control.
-- **Practice drills.** The Mistakes tab replays your Mistakes, Misses, and Blunders from the original position. Missed mates come back as drills that only accept a mate at least as fast.
-- **Spaced practice from your own games.** Every Mistake, Miss, and Blunder you make is saved as a puzzle on the Practice page and comes back after 1, 3, 7, 21, and 60 days, mixed across games. Testing yourself on a spaced schedule is one of the two study methods with the strongest research support.
-- **Weakness report.** Across your reviewed games, see which kinds of mistakes you make most, how many come in easy positions, how each game phase goes, what happens when you're low on time, and which won games slipped away. Each finding links to matching puzzles.
+## Why ChessBot
+
+| | |
+| --- | --- |
+| **Private** | Stockfish 19 runs in WebAssembly inside the extension. No account, analytics, or tracking. |
+| **Fast** | Up to four engines work at once. A quick pass grades the whole game in well under a minute, and close calls are rechecked deeper in the background. |
+| **Honest** | Grades come from the drop in expected score, are benchmarked against deeper searches, and say when they're uncertain. |
+| **Explained** | Every mistake gets a reason checked on the board: the tactic it allowed or missed, the material it lost, or what the better move does. |
+| **Free** | No review limits and no subscription. Released under the GPL. |
+
+## A tour of ChessBot
+
+### Every move, explained
+
+Each move is graded from Brilliant to Blunder, with the engine's best lines and the reason behind the grade. The coach names the tactic only when Stockfish's line wins material or mates, so it never describes a pattern the line doesn't use. **Show on board** draws the tactic and marks the attacked pieces.
+
+### The whole game at a glance
+
+<p align="center">
+  <img src="docs/images/review-summary.png" alt="The game chart shows White's and Black's advantage with phase markers and dots for mistakes, followed by accuracy, Decision Quality, and grade counts for each player" width="900">
+</p>
+
+- **Lichess-style chart.** White's edge shades light and Black's dark from a center line. Dots mark every Inaccuracy, Mistake, Miss, and Blunder, and dashed lines mark where the middlegame and endgame begin. Hover for the move and evaluation, or click and drag to move through the game.
+- **Move times.** Games with clock data add a chart of the time spent on each move, with errors colored by grade.
+- **Accuracy and Decision Quality.** Lichess-style accuracy, average centipawn loss, and separate opening, middlegame, and endgame scores. Each grade count jumps to the next move of that grade.
+
+### Comments on every mistake
+
+<p align="center">
+  <img src="docs/images/move-list-comments.png" alt="The Moves tab lists each move with its grade and, under every mistake, the better move, the evaluation change, and Stockfish's line. Hovering a move in a line previews that position on a small board." width="900">
+</p>
+
+The Moves tab says which move was best and how the evaluation changed, with Stockfish's line underneath, as Lichess's computer analysis does. **Hover any move in a line to preview the position, and click it to play the line on the board.**
+
+### See what your opponent threatens
+
+<p align="center">
+  <img src="docs/images/threat-and-drawing.png" alt="The threat view shows a dashed red arrow and a banner naming what Black threatens. Green, blue, and red arrows and a circle were drawn on the board with the right mouse button." width="900">
+</p>
+
+Press <kbd>X</kbd> to see what the side that just moved would play if it could move again. Only mates, named tactics, and moves that win material count as threats. Draw your own arrows and circles with the right mouse button, in green, red, blue, or yellow with <kbd>Shift</kbd> and <kbd>Alt</kbd>.
+
+### Study your opening
+
+<p align="center">
+  <img src="docs/images/opening-study.png" alt="Opening study shows the first move outside the book, with game counts and results for the common alternatives from rated Lichess games" width="900">
+</p>
+
+See where your game left the book and try the common alternatives. The explorer shows game counts and results from rated Lichess games between players rated 2100 and up. The opening catalog works offline and recognizes transpositions.
+
+### Retry your mistakes, then practice them later
+
+<p align="center">
+  <img src="docs/images/mistakes-drill.png" alt="The Mistakes tab replays a mistake from the original position and asks you to find a stronger move" width="900">
+</p>
+
+The Mistakes tab replays your Mistakes, Misses, and Blunders from the original position. Missed mates come back as drills that only accept a mate at least as fast. Every mistake you make is also saved to the **Practice** page, where it returns after 1, 3, 7, 21, and 60 days, mixed across games. A weakness report across your reviewed games shows which kinds of mistakes you make most, how many come in easy positions, and which won games slipped away, with a button to practice each one.
+
+### More
+
+- **Deep Check.** Run a deeper Stockfish comparison on one move and play the deeper line.
 - **Human difficulty.** For each decision, ChessBot estimates how often players find a sound move and names the most tempting mistake. The model was trained on public-domain Lichess games.
 - **Practical impact.** A clock-aware model estimates how much a move changed a human player's real chances, not just the engine evaluation.
-- **Free exploration.** Try your own moves on the board, with a full promotion picker. Repetitions and 50-move draws are recognized in your variations.
+- **Annotated PGN export.** Copy or download the game with evaluations, clock times, grades, and Stockfish's better lines, ready to import into Lichess, Chess.com, or ChessBase.
+- **Free exploration.** Try your own moves on the board, with a full promotion picker. Repetitions and 50-move draws are recognized.
+- **Optional AI explanations.** Bring your own key for OpenAI, DeepSeek, Gemini, or any OpenAI-compatible endpoint. They stay off until you set one up.
 - **Fair-play safe.** The review button appears only after a Chess.com game is over. ChessBot never runs during live play.
 
 <p align="center">
-  <img src="docs/images/review-summary.png" alt="Game summary with the advantage timeline, accuracy, Decision Quality, and grade counts for each player" width="900">
+  <img src="docs/images/shortcuts.png" alt="The shortcut sheet lists the keyboard and mouse shortcuts for stepping through a game, analysis, and drawing on the board" width="640">
 </p>
+
+Everything has a shortcut. Press <kbd>?</kbd> in the review for the full list.
 
 ## Install
 
