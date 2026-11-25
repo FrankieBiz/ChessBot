@@ -2,6 +2,38 @@
 
 Each model and search rule in ChessBot was fitted on one set of games and measured on games it had not seen. The sections below give the results and the commands to reproduce them. Raw outputs and source hashes are in [`research/`](../research/). For what each model does in the extension, see [methodology.md](methodology.md).
 
+## Opening book coverage
+
+Replaying 3,865 named Lichess opening lines gives 8,192 position-move pairs. The first 64 MiB of each February, May, and August 2026 Lichess rated archive yielded 18,168 human blitz, rapid, and classical games with both players rated at least 2100. The generator adds moves through ply 20 if at least 20 games played the move, it accounted for at least 5% of plays from that position, and at least five games played it in each of two months. This adds 211 pairs and 1.4 KiB to the gzip-compressed data module. Both data sources are released under CC0. [Lichess opening lines](https://github.com/lichess-org/chess-openings/tree/48a8c0e733facfdc9a3723fe882e51ec28014074) · [Lichess rated archives](https://database.lichess.org/#standard_games)
+
+A separate October 2026 block contained 6,657 eligible games. Each row gives the share of played moves at that ply found in the catalog before applying the Stockfish screen. A ply is one move by either player. Coverage remains sparse later in the opening. [Per-ply counts and source hashes](../research/opening-book-2026-11.json)
+
+| Ply | Named lines | Named lines and game sample |
+| ---: | ---: | ---: |
+| 3 | 87.2% | 91.4% |
+| 4 | 73.5% | 80.7% |
+| 5 | 60.8% | 67.9% |
+| 6 | 49.1% | 53.2% |
+| 8 | 29.9% | 33.3% |
+| 10 | 17.9% | 18.8% |
+| 12 | 9.4% | 9.4% |
+| 20 | 0.5% | 0.6% |
+
+To regenerate the catalog and print the October results, use `npm ci` and `zstd`, then run these commands from the repository root. The generator checks the three source archive hashes.
+
+```sh
+opening_archive_dir=$(mktemp -d)
+for month in 2026-02 2026-05 2026-08; do
+  curl --fail --location --range 0-67108863 --max-filesize 67108864 \
+    "https://database.lichess.org/standard/lichess_db_standard_rated_${month}.pgn.zst" \
+    --output "${opening_archive_dir}/${month}.pgn.zst"
+done
+curl --fail --location --range 70160138-137269001 --max-filesize 67108864 \
+  "https://database.lichess.org/standard/lichess_db_standard_rated_2026-10.pgn.zst" \
+  --output "${opening_archive_dir}/2026-10.pgn.zst"
+node scripts/build-opening-book.mjs "${opening_archive_dir}" "${opening_archive_dir}/2026-10.pgn.zst"
+```
+
 ## Practical impact calibration
 
 The trainer used one deterministic sample position per game from three 64 MiB prefixes of the Lichess rated standard PGN archives. It fitted coefficients on February 2026, selected among candidate curves on May 2026, and measured the resulting model on October 2026. Samples include annotated human bullet, blitz, and rapid games with supported increment clocks. The target was the actual game score (1 for a White win, ½ for a draw, and 0 for a Black win). All curves received the same recorded centipawn evaluations. [Lichess CC0 data](https://database.lichess.org/#standard_games)
@@ -95,6 +127,29 @@ python3 scripts/train-difficulty.py --train 2026-02.pgn.zst --validation 2026-05
   --test 2026-08.pgn.zst --model difficulty-data.js
 ```
 
+## Single-game rating feasibility
+
+The benchmark predicts a player's recorded pregame Lichess rating from one annotated game. This target measures how much one game's moves tell us about a player's established rating. Chess.com's Game Rating instead compares a game's play with expectations for the player's known rating. Research on intrinsic ratings and rating-conditioned move prediction supports testing richer models, with separate validation for each population. [Chess.com Game Rating](https://support.chess.com/en/articles/10773754-how-is-game-rating-calculated-in-game-review) · [Regan and Haworth](https://ojs.aaai.org/index.php/AAAI/article/view/7951) · [Maia-2](https://arxiv.org/abs/2409.20553)
+
+The benchmark uses the first 64 MiB of the February, May, and October 2026 Lichess rated standard archives for fitting, interval calibration, and testing. Each game contributes at most one side, selected by a hash of its game ID. Distinct username hash buckets keep evaluated players disjoint across splits, and the sampler retains at most one game per evaluated player. Both ratings are between 800 and 2600, and each sampled side has at least eight decisions scored from adjacent annotations covering at least 80% of its moves. Models are fitted separately for bullet, blitz, and rapid. The opponent-based baselines use the opponent's recorded rating in the same pool, which is available in these rated games and reflects matchmaking. [Lichess archive documentation](https://database.lichess.org/#standard_games)
+
+Move quality uses the archive's adjacent-position evaluations and the Lichess-style move accuracy curve. The richer model adds decision count, root-mean-square loss, frequency of losses above ten points, and mean loss in each move-number band. These band features use moves 1–10, 11–25, and 26 onward for the chosen side. ChessBot's full review uses a common-root Stockfish comparison and excludes forced moves. The archived data offers a less expensive test of rating prediction. [Lichess accuracy](https://lichess.org/page/accuracy)
+
+| Time class | Held-out games | Mean move accuracy only MAE | Richer move quality MAE | Move-quality 90% interval half-width | Opponent + result MAE | Opponent + result + quality MAE |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Bullet | 769 | 325.8 | 313.2 | ±633.8 | 50.9 | 51.2 |
+| Blitz | 1,813 | 301.8 | 283.1 | ±594.4 | 44.8 | 45.6 |
+| Rapid | 1,420 | 279.4 | 257.3 | ±545.8 | 55.5 | 55.4 |
+
+Errors and interval widths are in Lichess rating points. The move-only intervals cover 90.4%, 91.6%, and 91.6% of held-out ratings, respectively. Among players who made at least 35 moves, the richer move-only model still has MAE of 304.9, 280.8, and 251.2. Adding move quality to opponent rating and game result changes MAE by +0.29 in bullet (paired bootstrap 95% interval −0.18 to +0.77), +0.74 in blitz (+0.33 to +1.14), and −0.06 in rapid (−0.66 to +0.54). The report also includes training-cohort and opponent-only baselines, interval coverage by game length, and rating error by move-number band. [Held-out results and archive hashes](../research/game-rating-2026-11.json)
+
+This stays a research benchmark. The sample represents annotated games in the selected Lichess rating pools. Coverage and errors may differ for other pools, time controls, and review engines. A game-performance metric for ChessBot would need a defined target beyond reproducing a known rating, plus holdout tests on Chess.com games and on longer sequences of play.
+
+```sh
+python3 scripts/benchmark-game-rating.py --train 2026-02.pgn.zst \
+  --validation 2026-05.pgn.zst --test 2026-10.pgn.zst
+```
+
 ## Search depth and grade accuracy
 
 ### Deeper-search benchmark
@@ -137,4 +192,26 @@ Mean errors and node counts cover all 144 decisions. The v3.4 rule matches v3.3'
 node scripts/benchmark-review.mjs --input review-positions.jsonl --baseline /path/to/unpacked-v3.2.0 \
   --candidate . --cache /tmp/chessbot-review-cache --count 144 --policy always > always.json
 python3 scripts/simulate-search-policy.py --report always.json
+```
+
+### Complete-search result handling (v3.6)
+
+The v3.6 run replayed the same 72 October decisions from the deeper-search benchmark. It compared the v3.5 source at commit `704db0a` with the v3.6 search code, starting at depth 16 on the same Stockfish.js 19.0.1 build. The reference used an uncapped depth-22 matched comparison and the v3.5 grader. The harness clears the search table before each isolated decision. [Paired benchmark results](../research/search-reliability-2026-11.json)
+
+| Measurement | v3.5 | v3.6 |
+| --- | ---: | ---: |
+| Exact grade agreement | 58 / 72 | 60 / 72 |
+| Severe versus nonsevere agreement | 72 / 72 | 72 / 72 |
+| Mean absolute expected-score loss error | 0.700 pts | 0.567 pts |
+| Mean absolute capped centipawn loss error | 14.19 cp | 14.07 cp |
+| Decisions flagged as uncertain | 2 | 3 |
+| Mean reported search nodes | 1.205 million | 1.284 million |
+
+Four decisions used a deeper completed comparison. In one, the restored comparison triggered a broader search. The grade changed from Blunder to Mistake, matching the depth-22 reference, and the move card flagged the disagreement between the completed passes. That position accounted for the 6.5% increase in mean nodes and nearly all of the reduction in expected-score loss error. The paired change in error was −0.133 points, with an approximate 95% interval from −0.393 to +0.127. This replay checks the handling of capped searches and gives an inconclusive estimate of the effect on average grading error.
+
+To reproduce the comparison, generate the October sample as above and point the harness at a v3.5 build or a checkout with its vendored chess.js generated.
+
+```sh
+node scripts/benchmark-review.mjs --input review-positions.jsonl \
+  --baseline /path/to/v3.5.0 --candidate . --cache /tmp/chessbot-v36-review-cache --count 72
 ```

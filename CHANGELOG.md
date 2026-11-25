@@ -4,6 +4,20 @@ All notable changes to ChessBot are recorded here. The format follows [Keep a Ch
 
 ## [Unreleased]
 
+## [3.6.0] - 2026-11-24
+
+### Added
+
+- **Book** on the review card, board badge, move list, and game summary. The bundled opening book recognizes 8,403 position–move pairs offline, including transpositions, using Lichess opening theory and common continuations from rated games. Stockfish still evaluates the move and preserves any tactical warnings.
+- Each move card shows the expected-score loss that drives its engine grade. The summary shows the number of scored decisions and uncertain grades, and recorded player ratings show their source.
+- A reproducible single-game rating study measures prediction error by time control and compares it with simple baselines.
+
+### Fixed
+
+- Stockfish comparisons keep complete, same-depth sets of lines. A capped recheck that cannot confirm a grade leaves it marked uncertain.
+- A collapse above the 20-point expected-score loss boundary keeps its Blunder grade after an opponent's error. Exact loss boundaries classify consistently despite floating-point rounding.
+- Reanalyzing a game or leaving a drill safely discards pending move checks for that board position.
+
 ## [3.5.0] - 2026-11-24
 
 ### Added
@@ -41,7 +55,8 @@ All notable changes to ChessBot are recorded here. The format follows [Keep a Ch
 
 This is the first version in this repository. Earlier releases (3.1 and 3.2) were developed before version control. It includes local Stockfish 19 review, move grades, Lichess-style accuracy, Decision Quality, the built-in coach with optional AI explanations, the Mistakes trainer, clock-aware practical impact, and the cohort difficulty model.
 
-[Unreleased]: https://github.com/FrankieBiz/ChessBot/compare/v3.5.0...HEAD
+[Unreleased]: https://github.com/FrankieBiz/ChessBot/compare/v3.6.0...HEAD
+[3.6.0]: https://github.com/FrankieBiz/ChessBot/compare/v3.5.0...v3.6.0
 [3.5.0]: https://github.com/FrankieBiz/ChessBot/compare/v3.4.0...v3.5.0
 [3.4.0]: https://github.com/FrankieBiz/ChessBot/compare/v3.3.0...v3.4.0
 [3.3.0]: https://github.com/FrankieBiz/ChessBot/releases/tag/v3.3.0

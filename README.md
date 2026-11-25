@@ -26,6 +26,7 @@ ChessBot is a browser extension that reviews your finished games the way a coach
 
 - **Full-strength engine, fully local.** Stockfish 19 with its full NNUE network runs in a WebAssembly worker inside the extension. Your games never leave your browser.
 - **Move grades from Brilliant to Blunder.** Grades come from the drop in expected score, not raw centipawns. Positions where the grade is at risk are rechecked with deeper searches, and the move card says when a grade is still uncertain.
+- **Book moves.** See established opening moves and opening names in the review, on the board, and in the move list. The bundled catalog recognizes transpositions offline, and Stockfish still checks the moves.
 - **Accuracy and Decision Quality.** Lichess-style accuracy, average centipawn loss, and separate opening, middlegame, and endgame scores. Decision Quality adds a score that weighs large mistakes more heavily.
 - **Coaching on every move.** A built-in coach points out hanging pieces, missed tactics, king-safety problems, and missed mates. Optional AI explanations use your own key for OpenAI, DeepSeek, Gemini, or any OpenAI-compatible endpoint.
 - **Practice drills.** The Mistakes tab replays your Mistakes, Misses, and Blunders from the original position. Missed mates come back as drills that only accept a mate at least as fast.
@@ -99,6 +100,7 @@ ChessBot's grading rules and models are tested against deeper searches and held-
 | --- | --- |
 | `review.html`, `review.js`, `review.css` | The review page: board, move card, summary, drills, and settings |
 | `engine.js`, `analysis.js` | Stockfish worker control, move grading, and adaptive search |
+| `opening-book.js`, `opening-book-data.js` | Offline opening recognition and the Lichess opening catalog |
 | `coach.js`, `coach-api.js`, `tactics.js` | Built-in coaching text, optional AI explanations, and missed-mate detection |
 | `drills.js`, `variation.js` | Drill checking and variation replay |
 | `practice.html`, `practice.js`, `practice.css` | The Practice page: daily review, theme practice, and the weakness report |
@@ -132,6 +134,6 @@ It bundles these projects:
 - [chess.js](https://github.com/jhlywa/chess.js), BSD-2-Clause
 - [cm-chessboard](https://github.com/shaack/cm-chessboard), MIT
 
-The human-difficulty and calibration models were trained on the [Lichess open database](https://database.lichess.org/), released under CC0.
+The human-difficulty and calibration models were trained on the [Lichess open database](https://database.lichess.org/), released under CC0. The opening book combines named lines from the [Lichess chess-openings project](https://github.com/lichess-org/chess-openings) with frequent continuations from the CC0 game archives. The benchmark documentation lists the pinned inputs and the [command to regenerate the book](docs/benchmarks.md#opening-book-coverage).
 
 ChessBot is an independent project. It is not affiliated with or endorsed by Chess.com or Lichess.

@@ -26,8 +26,21 @@ test('only-move praise requires a confirmed comparison that crosses a meaningful
   assert.equal(classifyMove({ ...move, winBefore: 98, winAfter: 98, secondScore: 75 }).key, 'best');
 });
 
-test('a severe missed opportunity remains visible as a Miss', () => {
-  assert.equal(classifyMove({ ...move, playedUci: 'a2a3', winBefore: 80, winAfter: 40, prevOpponentWinLoss: 28 }).key, 'miss');
+test('a missed opportunity is a Miss at the Mistake boundary', () => {
+  assert.equal(classifyMove({ ...move, playedUci: 'a2a3', winBefore: 75, winAfter: 55, prevOpponentWinLoss: 28 }).key, 'miss');
+});
+
+test('a loss beyond the Mistake boundary is a Blunder after an opponent error', () => {
+  const missedOpportunity = { ...move, playedUci: 'a2a3', winBefore: 75, prevOpponentWinLoss: 28 };
+  assert.equal(classifyMove({ ...missedOpportunity, winAfter: 54.9 }).key, 'blunder');
+  assert.equal(classifyMove({ ...missedOpportunity, winAfter: 35 }).key, 'blunder');
+});
+
+test('a WDL loss on a grade boundary stays in that grade', () => {
+  for (const [winAfter, key] of [[61.15, 'excellent'], [59.15, 'good'], [54.15, 'inaccuracy']]) {
+    assert.equal(classifyMove({ ...move, playedUci: 'a2a3', winBefore: 64.15, winAfter }).key, key);
+  }
+  assert.equal(classifyMove({ ...move, playedUci: 'a2a3', winBefore: 50.2, winAfter: 30.2 }).key, 'mistake');
 });
 
 test('volatility uses full opening windows and a zero remains zero', () => {
@@ -49,6 +62,7 @@ test('worker searches are serialized and MultiPV candidates share the same compl
         emit('info depth 8 multipv 1 score cp 30 wdl 100 900 0 pv e2e4');
         emit('info depth 8 multipv 2 score cp 20 wdl 50 950 0 pv d2d4');
         emit('info depth 9 multipv 1 score cp 40 wdl 120 880 0 pv e2e4');
+        emit('info depth 8 multipv 2 score cp 10 wdl 30 960 10 pv c2c4');
         emit('bestmove e2e4');
       });
     }
@@ -74,5 +88,27 @@ test('worker searches are serialized and MultiPV candidates share the same compl
   } finally {
     engine.terminate();
     globalThis.Worker = originalWorker;
+  }
+});
+
+test('the deepest complete batch can have a different leader than a later partial batch', async () => {
+  const engine = new StockfishEngine('stockfish.js');
+  engine.worker = { postMessage() {}, terminate() {} };
+  const fen = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+  const search = engine.search(fen, 10);
+  try {
+    for (const message of [
+      'info depth 8 multipv 1 score cp 30 pv e2e4',
+      'info depth 8 multipv 2 score cp 20 pv d2d4',
+      'info depth 9 multipv 1 score cp 35 pv d2d4',
+      'info depth 9 multipv 2 score cp 22 pv e2e4',
+      'info depth 10 multipv 1 score cp 40 pv e2e4',
+      'bestmove e2e4',
+    ]) engine.request.onLine(message);
+    const result = await search;
+    assert.equal(result.depth, 9);
+    assert.deepEqual(result.lines.map(({ pv }) => pv[0]), ['d2d4', 'e2e4']);
+  } finally {
+    engine.terminate();
   }
 });

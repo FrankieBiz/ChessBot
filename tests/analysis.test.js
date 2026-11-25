@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { analyzeDecision, compareRootMoves, parseReviewGame, scoreDecision } from '../analysis.js';
-import { summarizeLines } from '../engine.js';
+import { StockfishEngine, summarizeLines } from '../engine.js';
 
 const line = (uci, winWhite, cp, depth = 14, continuation = []) => ({
   pv: [uci, ...continuation], winWhite, eval: { type: 'cp', value: cp }, depth,
@@ -93,6 +93,84 @@ test('retains a valid baseline when a practical-loss recheck cannot compare all 
   assert.equal(calls, 2);
   assert.equal(comparison.root, baseline);
   assert.equal(comparison.confirmed, undefined);
+});
+
+test('recovers a capped baseline comparison by scoring the best and played moves together', async () => {
+  const { positions: [before, after] } = parseReviewGame('1. a3 *');
+  const best = line('e2e4', 60, 80);
+  const played = line('a2a3', 59, 75);
+  const root = summarizeLines([best, line('d2d4', 60, 80)], 'w');
+  const searches = [];
+  const engine = { analyzePosition(fen, depth, { searchMoves }) {
+    searches.push([depth, searchMoves]);
+    if (searches.length === 2) return summarizeLines([best, played], 'w');
+    return summarizeLines([best], 'w');
+  } };
+  const comparison = await analyzeDecision(engine, before, after, 14, root);
+  assert.deepEqual(searches, [
+    [14, ['e2e4', 'd2d4', 'a2a3']], [14, ['e2e4', 'a2a3']], [16, undefined],
+  ]);
+  assert.deepEqual(comparison.played, played);
+  assert.equal(comparison.root.depth, 14);
+  assert.equal(comparison.searchConfidence, 'borderline');
+});
+
+test('keeps the complete baseline when the deeper shortlist contains only the played move', async () => {
+  const { positions: [before, after] } = parseReviewGame('1. a3 *');
+  const baseline = summarizeLines([line('e2e4', 63, 110), line('a2a3', 51, 10)], 'w');
+  const incomplete = summarizeLines([line('a2a3', 56, 50, 16)], 'w');
+  const engine = { analyzePosition() { return incomplete; } };
+  const result = await analyzeDecision(engine, before, after, 14, baseline);
+  assert.equal(result.root, baseline);
+  assert.equal(result.passes.length, 1);
+  assert.equal(result.searchConfidence, 'borderline');
+});
+
+test('a recheck with no exact result retains the baseline and keeps the Stockfish worker', async () => {
+  const { positions: [before, after] } = parseReviewGame('1. a3 *');
+  const baseline = summarizeLines([line('e2e4', 63, 110), line('a2a3', 51, 10)], 'w');
+  const engine = new StockfishEngine('stockfish.js');
+  let goCount = 0;
+  let terminated = false;
+  const worker = {
+    postMessage(command) {
+      if (!command.startsWith('go ')) return;
+      const message = ++goCount === 1
+        ? 'info depth 16 score cp 52 lowerbound pv e2e4' : 'info depth 14 score cp 40 pv e2e4';
+      queueMicrotask(() => {
+        engine.request.onLine(message);
+        engine.request.onLine('bestmove e2e4');
+      });
+    },
+    terminate() { terminated = true; },
+  };
+  engine.worker = worker;
+  engine.ready = true;
+  try {
+    const result = await analyzeDecision(engine, before, after, 14, baseline);
+    assert.equal(result.root, baseline);
+    assert.equal(result.searchConfidence, 'borderline');
+    assert.equal(engine.worker, worker);
+    assert.equal(terminated, false);
+    assert.equal((await engine.analyzePosition(before.fen, 14, { multiPv: 1 })).bestMove, 'e2e4');
+  } finally {
+    engine.terminate();
+  }
+});
+
+test('marks a grade borderline when a required broad search cannot finish', async () => {
+  const { positions: [before, after] } = parseReviewGame('1. a3 *');
+  const first = summarizeLines([line('e2e4', 65.4, 140), line('a2a3', 50, 0)], 'w');
+  const second = summarizeLines([line('e2e4', 62.1, 120, 16), line('a2a3', 50, 0, 16)], 'w');
+  const searches = [];
+  const engine = { analyzePosition(fen, depth) {
+    searches.push(depth);
+    return second;
+  } };
+  const result = await analyzeDecision(engine, before, after, 14, first);
+  assert.deepEqual(searches, [16, 18]);
+  assert.equal(result.root, second);
+  assert.equal(result.searchConfidence, 'borderline');
 });
 
 test('rechecks moves close to a grade threshold and resolves a grade that moved between depths', async () => {

@@ -20,6 +20,7 @@ import {
   analyzeDecision, analyzeGamePosition, compareRootMoves, parseReviewGame, scoreDecision, terminalPosition,
 } from "./analysis.js";
 import { AI_PRESETS, coachEndpoint, coachRequestBody, migrateCoachSettings } from "./coach-api.js";
+import { bookForReview, findBookMoves } from "./opening-book.js";
 import { trainingPriority } from "./practical-model.js";
 import { computeDecisionQuality } from "./decision-quality.js";
 import { drillHint, drillPrompt, drillRejection, drillSuccess, judgeDrillAttempt } from "./drills.js";
@@ -40,6 +41,8 @@ const RING_CIRCUMFERENCE = 2 * Math.PI * 22;
 const ARROW_BEST = { class: "arrow-best" };
 const ARROW_PLAYED_BAD = { class: "arrow-played-bad" };
 const ARROW_BRILLIANT = { class: "arrow-brilliant" };
+const BOOK_CLASSIFICATION = { key: "book", label: "Book", symbol: "📖", color: "#bda181" };
+const REVIEW_CLASSIFICATIONS = { ...CLASSIFICATIONS, book: BOOK_CLASSIFICATION };
 
 const CLASSIFICATION_ORDER = [
   "brilliant",
@@ -47,11 +50,16 @@ const CLASSIFICATION_ORDER = [
   "best",
   "excellent",
   "good",
+  "book",
   "inaccuracy",
   "mistake",
   "miss",
   "blunder",
 ];
+
+function displayClassification(review) {
+  return review.book ? BOOK_CLASSIFICATION : review.classification;
+}
 
 function createSvgEl(tag, attrs = {}) {
   const el = document.createElementNS(SVG_NS, tag);
@@ -128,6 +136,7 @@ const state = {
   gameMeta: null,
   gameHeaders: null,
   positions: [],
+  bookMoves: [],
   evals: [],
   moveReviews: [],
   currentPly: 0,
@@ -240,6 +249,7 @@ const dom = {
   moveDifficultyText: document.getElementById("moveDifficultyText"),
   temptingMoveText: document.getElementById("temptingMoveText"),
   gradeConfidenceText: document.getElementById("gradeConfidenceText"),
+  engineLossText: document.getElementById("engineLossText"),
   moveAccuracyPill: document.getElementById("moveAccuracyPill"),
   pvLinesBox: document.getElementById("pvLinesBox"),
   pvLineWrap: document.getElementById("pvLineWrap"),
@@ -282,6 +292,8 @@ const dom = {
   phaseMiddleBar: document.getElementById("phaseMiddleBar"),
   phaseEndVal: document.getElementById("phaseEndVal"),
   phaseEndBar: document.getElementById("phaseEndBar"),
+  scoredWhiteMoves: document.getElementById("scoredWhiteMoves"),
+  scoredBlackMoves: document.getElementById("scoredBlackMoves"),
   breakdownBody: document.getElementById("breakdownBody"),
   moveList: document.getElementById("moveList"),
 
@@ -450,14 +462,26 @@ function extractOpeningName(headers) {
   if (headers.ECOUrl) {
     const slug = headers.ECOUrl.split("/openings/")[1];
     if (slug) {
-      return decodeURIComponent(slug)
-        .replace(/-/g, " ")
-        .replace(/\b\d+\.\.\.?\S*/g, "")
-        .replace(/\s+/g, " ")
-        .trim();
+      try {
+        return decodeURIComponent(slug)
+          .replace(/-/g, " ")
+          .replace(/\b\d+\.\.\.?\S*/g, "")
+          .replace(/\s+/g, " ")
+          .trim();
+      } catch {
+        // A malformed opening URL can appear in an imported PGN.
+      }
     }
   }
   return headers.ECO ? `ECO ${headers.ECO}` : "";
+}
+
+function recordedRating(gameRating, pgnRating) {
+  for (const [value, source] of [[gameRating, "Chess.com game record"], [pgnRating, "PGN Elo tag"]]) {
+    const rating = Number(value);
+    if (Number.isSafeInteger(rating) && rating > 0) return { rating, ratingSource: source };
+  }
+  return { rating: null, ratingSource: "" };
 }
 
 function initBoard(orientation = "w") {
@@ -507,8 +531,9 @@ function updateSquareBadgeOverlay(ply) {
   const col = state.orientation === "w" ? file : 7 - file;
   const row = state.orientation === "w" ? 7 - rank : rank;
 
-  const cls = rev.classification;
+  const cls = displayClassification(rev);
   el.textContent = cls.symbol;
+  el.title = cls.label;
   el.style.background = cls.color;
   el.style.left = `${(col + 1) * 12.5}%`;
   el.style.top = `${row * 12.5}%`;
@@ -583,7 +608,12 @@ function commitBoardMove(activeChess, move) {
   board.setPosition(activeChess.fen(), true);
 
   if (state.drillActive) {
-    setTimeout(() => evaluateDrillAttempt(moveObj, uci, activeChess.isCheckmate()), 40);
+    const epoch = state.boardEpoch;
+    const stillCurrent = () => state.drillActive && !state.drillSolved && state.boardEpoch === epoch;
+    state.drillChecking = true;
+    setTimeout(() => {
+      if (stillCurrent()) evaluateDrillAttempt(moveObj, uci, activeChess.isCheckmate(), stillCurrent);
+    }, 40);
     return true;
   }
 
@@ -769,21 +799,21 @@ function loadGameFromPayload(payload) {
 
   const whiteName = payload.white?.username || headers.White || "White";
   const blackName = payload.black?.username || headers.Black || "Black";
-  const whiteRating = payload.white?.rating || (headers.WhiteElo ? Number(headers.WhiteElo) : null);
-  const blackRating = payload.black?.rating || (headers.BlackElo ? Number(headers.BlackElo) : null);
   const result = headers.Result || "*";
-  const opening = extractOpeningName(headers);
+  const bookMoves = findBookMoves(positions);
+  const opening = extractOpeningName(headers) || bookMoves.findLast((match) => match?.name)?.name || "";
 
   state.gameMeta = {
     ...payload,
     result,
     opening,
-    white: { username: whiteName, rating: whiteRating, result: payload.white?.result || "" },
-    black: { username: blackName, rating: blackRating, result: payload.black?.result || "" },
+    white: { username: whiteName, ...recordedRating(payload.white?.rating, headers.WhiteElo), result: payload.white?.result || "" },
+    black: { username: blackName, ...recordedRating(payload.black?.rating, headers.BlackElo), result: payload.black?.result || "" },
     playedColor: payload.playedColor || positions[1].move.color,
   };
 
   state.positions = positions;
+  state.bookMoves = bookMoves;
   state.evals = new Array(positions.length).fill(null);
   state.moveReviews = new Array(positions.length).fill(null);
   state.currentPly = 0;
@@ -801,17 +831,13 @@ function loadGameFromPayload(payload) {
   initBoard(state.gameMeta.playedColor);
   renderPlayerStrips();
   renderMoveList();
-  renderBreakdownTable();
   renderEvalGraph();
   goToPly(0, false);
 
   dom.gameResultTag.textContent = result;
   dom.accWhiteName.textContent = whiteName;
   dom.accBlackName.textContent = blackName;
-  dom.acplWhiteVal.textContent = "-- ACPL";
-  dom.acplBlackVal.textContent = "-- ACPL";
-  updateAccuracyRing(dom.accWhiteVal, dom.accWhiteRing, null);
-  updateAccuracyRing(dom.accBlackVal, dom.accBlackRing, null);
+  updateScoreboard();
 
   if (opening) {
     dom.openingTag.textContent = opening;
@@ -839,10 +865,12 @@ function renderPlayerStrips() {
   dom.topPlayerSwatch.className = `player-swatch ${topColor}`;
   dom.topPlayerName.textContent = top.username;
   dom.topPlayerRating.textContent = top.rating ? `(${top.rating})` : "";
+  dom.topPlayerRating.title = top.rating ? `Player rating from ${top.ratingSource}` : "";
 
   dom.bottomPlayerSwatch.className = `player-swatch ${bottomColor}`;
   dom.bottomPlayerName.textContent = bottom.username;
   dom.bottomPlayerRating.textContent = bottom.rating ? `(${bottom.rating})` : "";
+  dom.bottomPlayerRating.title = bottom.rating ? `Player rating from ${bottom.ratingSource}` : "";
 }
 
 function showTrainingNotice(text) {
@@ -966,6 +994,7 @@ async function runFullAnalysis() {
         const review = scoreDecision(before, pos, compared, prevOpponentWinLoss);
         state.moveReviews[i] = {
           ...review,
+          book: bookForReview(pos.terminal ? null : state.bookMoves[i], review),
           bestSan: pvToSan(before.fen, root.pv, 1),
           pvSan: pvToSan(before.fen, root.pv),
           pvEvalStr: formatEval(root.eval),
@@ -1022,6 +1051,7 @@ function goToPly(ply, animate = true, withSound = false) {
   const clamped = Math.max(0, Math.min(state.positions.length - 1, ply));
   state.currentPly = clamped;
   state.boardEpoch++;
+  state.drillChecking = false;
 
   if (state.exploring) {
     clearVariationState();
@@ -1147,6 +1177,7 @@ function updateArrowsForPly(ply) {
 
 function renderCoachCard(ply) {
   dom.aiCoachOutput.classList.add("hidden");
+  dom.moveBadge.title = "";
 
   if (ply === 0) {
     dom.coachCard.style.borderLeftColor = "#81b64c";
@@ -1184,8 +1215,12 @@ function renderCoachCard(ply) {
     return;
   }
 
-  const cls = review.classification;
-  const insight = generateLocalCoachInsight({
+  const cls = displayClassification(review);
+  const insight = review.book ? {
+    title: `${posAfter.move.san} is a book move`,
+    text: review.book.name || "Recorded in the bundled opening book.",
+    tag: review.book.eco,
+  } : generateLocalCoachInsight({
     ChessClass: Chess,
     fenBefore: posBefore.fen,
     fenAfter: posAfter.fen,
@@ -1199,6 +1234,7 @@ function renderCoachCard(ply) {
   dom.moveBadge.className = "class-badge";
   dom.moveBadge.style.background = cls.color;
   dom.moveBadge.textContent = cls.symbol;
+  dom.moveBadge.title = review.book ? `Book · Stockfish grade ${review.classification.label}` : cls.label;
   dom.moveHeadline.textContent = `${movePrefix} ${insight.title}`;
   dom.moveSubline.textContent = insight.text;
 
@@ -1212,6 +1248,8 @@ function renderCoachCard(ply) {
   const evalBeforeStr = formatEval(state.evals[ply - 1]?.eval);
   const evalAfterStr = formatEval(review.playedEval);
   dom.evalDeltaText.textContent = `Best ${evalBeforeStr} · played ${evalAfterStr} · ${review.cpLoss} cp lost`;
+  dom.engineLossText.textContent = `Engine expected-score loss ${review.winLoss.toFixed(1)} pts`;
+  dom.engineLossText.title = `Stockfish depth ${review.depth}. Expected-score loss uses engine self-play on a 0–100 scale. This loss drives the move grade.`;
   dom.moveAccuracyPill.textContent = review.forced ? "Only legal move" : `Move: ${review.accuracy.toFixed(0)}%`;
   dom.evalDeltaStrip.classList.remove("hidden");
   const impact = review.practicalImpact;
@@ -1412,24 +1450,17 @@ function updateScoreboard() {
     const move = state.positions[i]?.move;
     if (!rev || !move) continue;
     reviewsByColor[move.color].push(rev);
-
+    counts[move.color][displayClassification(rev).key]++;
+    if (rev.forced) continue;
     if (move.color === "w") {
-      if (!rev.forced) {
-        whiteMoves.push({ ply: i, accuracy: rev.accuracy });
-        whiteCpLosses.push(rev.cpLoss);
-      }
-      counts.w[rev.classification.key]++;
+      whiteMoves.push({ ply: i, accuracy: rev.accuracy });
+      whiteCpLosses.push(rev.cpLoss);
     } else {
-      if (!rev.forced) {
-        blackMoves.push({ ply: i, accuracy: rev.accuracy });
-        blackCpLosses.push(rev.cpLoss);
-      }
-      counts.b[rev.classification.key]++;
+      blackMoves.push({ ply: i, accuracy: rev.accuracy });
+      blackCpLosses.push(rev.cpLoss);
     }
   }
 
-  dom.accWhiteVal.title = `${whiteMoves.length} scored decisions · forced moves excluded`;
-  dom.accBlackVal.title = `${blackMoves.length} scored decisions · forced moves excluded`;
   const whiteAcc = computeProGameAccuracy(winTimeline, whiteMoves);
   const blackAcc = computeProGameAccuracy(winTimeline, blackMoves);
   const whiteAcpl = computeACPL(whiteCpLosses);
@@ -1440,10 +1471,15 @@ function updateScoreboard() {
   dom.acplWhiteVal.textContent = whiteAcpl !== null ? `${whiteAcpl} ACPL` : "-- ACPL";
   dom.acplBlackVal.textContent = blackAcpl !== null ? `${blackAcpl} ACPL` : "-- ACPL";
 
-  for (const [color, qualityEl, peakEl] of [
-    ["w", dom.qualityWhiteVal, dom.worstWhiteVal], ["b", dom.qualityBlackVal, dom.worstBlackVal],
+  for (const [color, qualityEl, peakEl, countEl, count] of [
+    ["w", dom.qualityWhiteVal, dom.worstWhiteVal, dom.scoredWhiteMoves, whiteMoves.length],
+    ["b", dom.qualityBlackVal, dom.worstBlackVal, dom.scoredBlackMoves, blackMoves.length],
   ]) {
-    const quality = computeDecisionQuality(reviewsByColor[color]);
+    const reviews = reviewsByColor[color];
+    const uncertain = reviews.filter(({ searchConfidence }) => searchConfidence === "borderline").length;
+    const scores = `${count} scored ${count === 1 ? "decision" : "decisions"}`;
+    countEl.textContent = `${scores}${uncertain ? ` · ${uncertain} uncertain ${uncertain === 1 ? "grade" : "grades"}` : ""}`;
+    const quality = computeDecisionQuality(reviews);
     qualityEl.textContent = quality ? `Decision quality ${quality.score.toFixed(1)}` : "";
     peakEl.textContent = quality ? `Biggest loss ${quality.biggestLoss.toFixed(0)} pts` : "";
   }
@@ -1469,14 +1505,9 @@ function updateScoreboard() {
 }
 
 function renderBreakdownTable(counts) {
-  const safeCounts = counts || {
-    w: Object.fromEntries(CLASSIFICATION_ORDER.map((k) => [k, 0])),
-    b: Object.fromEntries(CLASSIFICATION_ORDER.map((k) => [k, 0])),
-  };
-
   const frag = document.createDocumentFragment();
   for (const key of CLASSIFICATION_ORDER) {
-    const cls = CLASSIFICATIONS[key];
+    const cls = REVIEW_CLASSIFICATIONS[key];
     const tr = document.createElement("tr");
 
     const tdLabel = document.createElement("td");
@@ -1490,6 +1521,7 @@ function renderBreakdownTable(counts) {
 
     const nameSpan = document.createElement("span");
     nameSpan.textContent = cls.label;
+    if (key === "book") nameSpan.title = "Sound opening move in the bundled Lichess catalog";
 
     cellSpan.appendChild(dot);
     cellSpan.appendChild(nameSpan);
@@ -1497,11 +1529,11 @@ function renderBreakdownTable(counts) {
 
     const tdWhite = document.createElement("td");
     tdWhite.className = "num";
-    tdWhite.textContent = String(safeCounts.w[key]);
+    tdWhite.textContent = String(counts.w[key]);
 
     const tdBlack = document.createElement("td");
     tdBlack.className = "num";
-    tdBlack.textContent = String(safeCounts.b[key]);
+    tdBlack.textContent = String(counts.b[key]);
 
     tr.appendChild(tdLabel);
     tr.appendChild(tdWhite);
@@ -1549,11 +1581,14 @@ function createMoveCell(ply) {
   btn.appendChild(sanSpan);
 
   if (rev) {
+    const cls = displayClassification(rev);
     const badge = document.createElement("span");
     badge.className = "move-cell-badge";
-    badge.style.background = rev.classification.color;
-    badge.textContent = rev.classification.symbol;
-    badge.title = rev.classification.label;
+    badge.style.background = cls.color;
+    badge.textContent = cls.symbol;
+    badge.title = cls.label;
+    badge.setAttribute("aria-hidden", "true");
+    btn.setAttribute("aria-label", `${pos.move.san}, ${cls.label}`);
     btn.appendChild(badge);
   }
 
@@ -1720,7 +1755,7 @@ dom.evalGraphSvg.addEventListener("mousemove", (ev) => {
     const moveNum = pos.move.number;
     const prefix = pos.move.color === "w" ? `${moveNum}.` : `${moveNum}...`;
     const evalStr = evData ? formatEval(evData.eval) : "…";
-    const sym = rev ? ` ${rev.classification.symbol}` : "";
+    const sym = rev ? ` ${displayClassification(rev).symbol}` : "";
     text = `${prefix}${pos.move.san}${sym} (${evalStr})`;
   }
 
@@ -1840,7 +1875,7 @@ function loadCurrentDrillStep() {
   enableBoardInput();
 }
 
-async function evaluateDrillAttempt(moveObj, attemptedUci, deliversMate) {
+async function evaluateDrillAttempt(moveObj, attemptedUci, deliversMate, stillCurrent) {
   const mistakePly = state.drillPlies[state.drillIndex];
   const beforePos = state.positions[mistakePly - 1];
   const originalMove = state.positions[mistakePly].move;
@@ -1851,22 +1886,16 @@ async function evaluateDrillAttempt(moveObj, attemptedUci, deliversMate) {
   let judgement = judgeDrillAttempt(attempt);
 
   if (judgement.verdict === "unknown" && engine && engine.ready && !state.isAnalyzing) {
-    state.drillChecking = true;
     dom.drillPromptText.className = "drill-prompt";
     dom.drillPromptText.textContent = `Checking ${moveObj.san} with Stockfish...`;
     try {
-      const runId = state.analysisRunId;
       const comparison = await compareRootMoves(engine, beforePos, attemptedUci, review.depth, state.evals[mistakePly - 1]);
-      if (!state.drillActive || mistakePly !== state.drillPlies[state.drillIndex] || runId !== state.analysisRunId) {
-        state.drillChecking = false;
-        return;
-      }
       judgement = judgeDrillAttempt({ ...attempt, comparison });
     } catch {
       // Keep the unverified judgement.
     }
-    state.drillChecking = false;
   }
+  if (!stillCurrent()) return;
 
   if (judgement.verdict === "best" || judgement.verdict === "alternative") {
     playSound("success");
@@ -1876,10 +1905,11 @@ async function evaluateDrillAttempt(moveObj, attemptedUci, deliversMate) {
   }
 
   playSound("error");
-  rejectDrillAttempt(drillRejection({ attemptSan: moveObj.san, judgement, review }), beforePos.fen);
+  rejectDrillAttempt(drillRejection({ attemptSan: moveObj.san, judgement, review }), beforePos.fen, stillCurrent);
 }
 
 function markDrillSolved(message, bestUci, mistakePly) {
+  state.drillChecking = false;
   state.drillSolved = true;
   state.drillSolvedSet.add(mistakePly);
   renderDrillDots();
@@ -1902,12 +1932,13 @@ function markDrillSolved(message, bestUci, mistakePly) {
   }
 }
 
-function rejectDrillAttempt(message, resetFen) {
+function rejectDrillAttempt(message, resetFen, stillCurrent) {
   dom.drillPromptText.className = "drill-prompt error";
   dom.drillPromptText.textContent = message;
   setTimeout(() => {
-    if (state.drillActive && !state.drillSolved) {
+    if (stillCurrent()) {
       board.setPosition(resetFen, true);
+      state.drillChecking = false;
     }
   }, 420);
 }
@@ -2304,7 +2335,7 @@ document.addEventListener("keydown", (ev) => {
 async function bootstrap() {
   await loadSavedSettings();
   initBoard("w");
-  renderBreakdownTable();
+  updateScoreboard();
   refreshPracticeBadge();
 
   // The Practice page links here with ?game=<gameKey>&ply=<ply> to open a saved game at that move.

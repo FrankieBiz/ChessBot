@@ -175,7 +175,8 @@ export function classifyMove({
   prevOpponentWinLoss = 0,
   missedMate = null,
 }) {
-  const winLoss = Math.max(0, winBefore - winAfter);
+  // Discard floating-point subtraction noise at an inclusive grade boundary.
+  const winLoss = Math.max(0, Number((winBefore - winAfter).toFixed(10)));
   const isTopEngineMove = Boolean(bestMoveUci && playedUci === bestMoveUci);
   const classified = (key) => ({ ...CLASSIFICATIONS[key], winLoss });
 
@@ -194,13 +195,17 @@ export function classifyMove({
   if (winLoss <= GRADE_LOSS_LIMITS.excellent) return classified("excellent");
   if (winLoss <= GRADE_LOSS_LIMITS.good) return classified("good");
   if (winLoss <= GRADE_LOSS_LIMITS.inaccuracy) return classified("inaccuracy");
-  if (prevOpponentWinLoss >= 15 && winBefore >= 65 && winAfter < 60) return classified("miss");
-  if (winLoss <= GRADE_LOSS_LIMITS.mistake) return classified("mistake");
+  if (winLoss <= GRADE_LOSS_LIMITS.mistake) {
+    const missedOpportunity = prevOpponentWinLoss >= 15 && winBefore >= 65 && winAfter < 60;
+    return classified(missedOpportunity ? "miss" : "mistake");
+  }
   return classified("blunder");
 }
 
+const UCI_SCORE_BOUND = /\b(?:upperbound|lowerbound)\b/;
+
 export function parseUciInfoLine(line, turn = "w") {
-  if (!line.startsWith("info ") || /\b(?:upperbound|lowerbound)\b/.test(line)) return null;
+  if (!line.startsWith("info ") || UCI_SCORE_BOUND.test(line)) return null;
   const score = line.match(/\bscore (cp|mate) (-?\d+)/);
   const depth = line.match(/\bdepth (\d+)/);
   const pv = line.match(/\bpv (.+)$/);
@@ -234,6 +239,8 @@ export function summarizeLines(lines, turn) {
     pvGap: second ? Math.max(0, (first.winWhite - second.winWhite) * (turn === "w" ? 1 : -1)) : 0,
   };
 }
+
+export class IncompleteStockfishSearch extends Error {}
 
 export class StockfishEngine {
   constructor(workerPath) {
@@ -280,15 +287,16 @@ export class StockfishEngine {
 
   waitForOutput(timeout, errorMessage, handler) {
     return new Promise((resolve, reject) => {
-      const finish = (value) => {
+      const settle = (callback) => (value) => {
         clearTimeout(timer);
         this.request = null;
-        resolve(value);
+        callback(value);
       };
       const timer = setTimeout(() => this.terminate(new Error(errorMessage)), timeout);
+      const fail = settle(reject);
       this.request = {
-        onLine: handler(finish),
-        reject: (error) => { clearTimeout(timer); reject(error); },
+        onLine: handler(settle(resolve), fail),
+        reject: fail,
       };
     });
   }
@@ -322,25 +330,36 @@ export class StockfishEngine {
 
   search(fen, depth, { initialFen = fen, history = [], searchMoves = [], multiPv = 2 } = {}) {
     const turn = fen.split(" ")[1];
-    const iterations = new Map();
-    const response = this.waitForOutput(45000, "Stockfish search timed out", (finish) => (line) => {
+    const exactLeaders = new Map();
+    let iteration = [];
+    let complete;
+    const response = this.waitForOutput(45000, "Stockfish search timed out", (finish, fail) => (line) => {
       const parsed = parseUciInfoLine(line, turn);
       if (parsed) {
-        if (!iterations.has(parsed.depth)) iterations.set(parsed.depth, []);
-        iterations.get(parsed.depth)[parsed.multipv - 1] = parsed;
+        // A stopped search can emit a new batch with some ranks from the previous depth.
+        if (parsed.multipv === 1) {
+          iteration = [parsed];
+          exactLeaders.set(parsed.pv[0], parsed);
+        } else if (parsed.multipv === iteration.length + 1 && parsed.multipv <= multiPv &&
+                   parsed.depth === iteration[0]?.depth) {
+          iteration.push(parsed);
+        } else {
+          iteration = [];
+        }
+        if (iteration.length === multiPv && (!complete || parsed.depth >= complete[0].depth) &&
+            new Set(iteration.map(({ pv }) => pv[0])).size === multiPv) {
+          complete = iteration;
+        }
         return;
       }
+      if (line.startsWith("info depth ") && UCI_SCORE_BOUND.test(line)) iteration = [];
       if (!line.startsWith("bestmove ")) return;
       const best = line.split(/\s+/)[1];
-      const ranked = [...iterations.values()].reverse()
-        .map((lines) => lines.filter(Boolean))
-        .filter((lines) => lines[0]?.multipv === 1);
-      const complete = ranked.filter((lines) => lines.length === multiPv &&
-        new Set(lines.map((candidate) => candidate.pv[0])).size === multiPv);
-      const candidateLines = complete.find((lines) => lines[0].pv[0] === best) ??
-        complete[0] ?? ranked.find((lines) => lines[0].pv[0] === best)?.slice(0, 1);
+      // bestmove may come from a later partial iteration than the complete comparison.
+      const leader = exactLeaders.get(best);
+      const candidateLines = complete ?? (leader && [leader]);
       if (candidateLines) finish(summarizeLines(candidateLines, turn));
-      else this.terminate(new Error("Stockfish returned no complete evaluation"));
+      else fail(new IncompleteStockfishSearch("Stockfish returned no complete evaluation"));
     });
     this.worker.postMessage(`setoption name MultiPV value ${multiPv}`);
     const played = history.length ? ` moves ${history.join(" ")}` : "";

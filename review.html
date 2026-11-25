@@ -193,6 +193,7 @@
             <div id="evalDeltaStrip" class="eval-delta-strip hidden">
               <span id="evalDeltaText"></span>
               <span id="moveAccuracyPill" class="move-acc-pill"></span>
+              <span id="engineLossText" class="practical-impact"></span>
               <span id="practicalImpactText" class="practical-impact hidden"></span>
               <span id="moveDifficultyText" class="practical-impact hidden"></span>
               <span id="temptingMoveText" class="practical-impact hidden"></span>
@@ -247,7 +248,7 @@
             </div>
           </div>
 
-          <!-- Circular Pro Accuracy Rings + ACPL + Phases + 9-Tier Breakdown -->
+          <!-- Accuracy rings, ACPL, phase scores, and move grades -->
           <div class="section-block">
             <div class="section-header">
               <h3 title="Engine accuracy uses Lichess-style game weighting. ACPL is average centipawn loss.">Performance</h3>
@@ -263,11 +264,12 @@
                     <circle class="ring-track" cx="28" cy="28" r="22"/>
                     <circle id="accWhiteRing" class="ring-progress" cx="28" cy="28" r="22"/>
                   </svg>
-                  <span id="accWhiteVal" class="ring-num">--</span>
+                  <span id="accWhiteVal" class="ring-num" title="White engine accuracy">--</span>
                 </div>
                 <div class="ring-meta">
                   <span class="ring-side">White</span>
                   <span id="accWhiteName" class="ring-player">White</span>
+                  <span id="scoredWhiteMoves" class="ring-acpl" title="Discretionary moves scored by Stockfish. Book moves count. Uncertain grades are included."></span>
                   <span id="acplWhiteVal" class="ring-acpl">-- ACPL</span>
                   <span id="qualityWhiteVal" class="ring-acpl" title="Out of 100. Larger Stockfish expected-score losses carry more weight."></span>
                   <span id="worstWhiteVal" class="ring-acpl" title="Largest single-move Stockfish expected-score loss."></span>
@@ -280,11 +282,12 @@
                     <circle class="ring-track" cx="28" cy="28" r="22"/>
                     <circle id="accBlackRing" class="ring-progress" cx="28" cy="28" r="22"/>
                   </svg>
-                  <span id="accBlackVal" class="ring-num">--</span>
+                  <span id="accBlackVal" class="ring-num" title="Black engine accuracy">--</span>
                 </div>
                 <div class="ring-meta">
                   <span class="ring-side">Black</span>
                   <span id="accBlackName" class="ring-player">Black</span>
+                  <span id="scoredBlackMoves" class="ring-acpl" title="Discretionary moves scored by Stockfish. Book moves count. Uncertain grades are included."></span>
                   <span id="acplBlackVal" class="ring-acpl">-- ACPL</span>
                   <span id="qualityBlackVal" class="ring-acpl" title="Out of 100. Larger Stockfish expected-score losses carry more weight."></span>
                   <span id="worstBlackVal" class="ring-acpl" title="Largest single-move Stockfish expected-score loss."></span>
