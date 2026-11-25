@@ -1,4 +1,4 @@
-import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
+import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
 import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -18,11 +18,13 @@ async function copyChess(vendor) {
 if (process.argv[2] === "--test") {
   await copyChess(at("vendor"));
 } else {
-  const files = ["analysis.js", "background.js", "board-setup.js", "calibration-data.js", "coach-api.js", "coach-evidence.js", "coach-reasons.js", "coach.js", "content.css", "content.js", "decision-quality.js", "deck.js", "difficulty-data.js", "difficulty-model.js", "drills.js", "annotated-pgn.js", "board-shapes.js", "engine-pool.js", "engine.js", "eval-chart.js", "lines.js", "human-move-data.js", "human-move-model.js", "icons", "motifs.js", "opening-book-data.js", "opening-book.js", "opening-explorer-data.js", "opening-explorer.js", "performance-data.js", "performance.js", "practical-model.js", "practice.css", "practice.html", "practice.js", "report.js", "review.css", "review.html", "review-run.js", "review.js", "tactics.js", "training-store.js", "variation.js", "weakness.js"];
+  const files = ["analysis.js", "annotated-pgn.js", "background.js", "board-setup.js", "board-shapes.js", "calibration-data.js", "coach-api.js", "coach-evidence.js", "coach-reasons.js", "coach.js", "content.css", "content.js", "decision-quality.js", "deck.js", "difficulty-data.js", "difficulty-model.js", "drills.js", "engine-pool.js", "engine.js", "eval-chart.js", "human-move-data.js", "human-move-model.js", "icons", "lines.js", "motifs.js", "opening-book-data.js", "opening-book.js", "opening-explorer-data.js", "opening-explorer.js", "performance-data.js", "performance.js", "practical-model.js", "practice.css", "practice.html", "practice.js", "report.js", "review-run.js", "review.css", "review.html", "review.js", "tactics.js", "training-store.js", "variation.js", "weakness.js"];
   await Promise.all(browsers.map(async (browser) => {
     const stage = at("dist", browser);
     const vendor = join(stage, "vendor");
     const engineDir = join(vendor, "stockfish");
+    // Start from an empty folder, so a removed file or a stray folder never ends up in the zip.
+    await rm(stage, { recursive: true, force: true });
     await mkdir(engineDir, { recursive: true });
     await Promise.all([
       ...files.map((name) => cp(at(name), join(stage, name), { recursive: true })),
