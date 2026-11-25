@@ -83,19 +83,26 @@ test("the peer summary refuses casual, other-pool, and short reviews", () => {
   assert.equal(peerPerformance({ ...input, headers: { Site: "https://lichess.org/AbCd1234", Event: "Rated Blitz game" } }), null);
 });
 
+test("no peer band ships until the benchmark supports one", () => {
+  for (const model of Object.values(PEER_PERFORMANCE)) {
+    assert.ok(model.ratingBands.length > 0 && model.weights.length > 0);
+  }
+});
+
 test("a supported peer summary sums pre-move probabilities for the chosen side", () => {
-  const [timeClass, model] = Object.entries(PEER_PERFORMANCE)[0] ?? [];
-  assert.ok(model, "the published benchmark must support a rating band");
-  const [[rating]] = model.ratingBands;
+  const timeClass = "blitz";
+  const models = { blitz: { ratingBands: [[1400, 1799]], weights: [0.4, ...Array(12).fill(0.05)] } };
+  const rating = 1650;
   const bases = { bullet: 60, blitz: 300, rapid: 600 };
   const before = {
     lichessRatings: { w: rating, b: 1600 }, legalMoves: 26, captureCount: 3, material: 58, inCheck: false,
     practicalContext: { timeControl: { base: bases[timeClass], increment: 0 }, whiteSeconds: 55, blackSeconds: 50, ply: 16 },
   };
   const root = { lines: [{}, {}], eval: { type: "cp", value: 34 } };
-  const prediction = peerDecisionPrediction(before, root, "w");
+  const prediction = peerDecisionPrediction(before, root, "w", models);
   assert.ok(prediction.chance > 0 && prediction.chance < 1);
-  assert.equal(peerDecisionPrediction(before, { ...root, lines: [{}] }, "w"), null);
+  assert.equal(peerDecisionPrediction(before, { ...root, lines: [{}] }, "w", models), null);
+  assert.equal(peerDecisionPrediction({ ...before, lichessRatings: { w: 2000, b: 1600 } }, root, "w", models), null);
   const eligible = Array.from({ length: 12 }, (_, index) => ({
     peerDifficulty: prediction, winLoss: index ? 5 : 5.05, forced: false,
   }));
@@ -103,7 +110,7 @@ test("a supported peer summary sums pre-move probabilities for the chosen side",
   const moveReviews = [null, ...eligible, { ...eligible[0], winLoss: 10 }, { ...eligible[0], forced: true }];
   const headers = { Site: "https://lichess.org/AbCd1234", WhiteElo: String(rating), BlackElo: "1600",
     Event: `Rated ${timeClass[0].toUpperCase()}${timeClass.slice(1)} game`, Result: "1-0" };
-  const input = { positions, moveReviews, headers, color: "w", depth: 16 };
+  const input = { positions, moveReviews, headers, color: "w", depth: 16, models };
   const comparison = peerPerformance(input);
   assert.equal(comparison.observedSound, 11);
   assert.equal(comparison.decisions, 12);

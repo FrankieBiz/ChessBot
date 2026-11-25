@@ -125,12 +125,12 @@ function supportsRating(model, rating) {
 }
 
 /** Predict from the initial unrestricted root before Stockfish searches the selected move. */
-export function peerDecisionPrediction(before, initialRoot, color) {
+export function peerDecisionPrediction(before, initialRoot, color, models = PEER_PERFORMANCE) {
   const clock = before?.practicalContext?.timeControl;
   const rating = before?.lichessRatings?.[color];
   if (!clock || !Number.isInteger(rating) || before.terminal || (initialRoot?.lines?.length ?? 0) < 2) return null;
   const timeClass = lichessSpeed(clock);
-  const model = PEER_PERFORMANCE[timeClass];
+  const model = models[timeClass];
   if (!supportsRating(model, rating)) return null;
   const data = difficultyFeatures(before, initialRoot.eval, color);
   if (data?.model !== "lichessRating") return null;
@@ -139,13 +139,13 @@ export function peerDecisionPrediction(before, initialRoot, color) {
 }
 
 /** Sum observed and expected sound decisions for a finished review in a tested Lichess group. */
-export function peerPerformance({ positions, moveReviews, color, headers, depth }) {
+export function peerPerformance({ positions, moveReviews, color, headers, depth, models = PEER_PERFORMANCE }) {
   if (depth !== REVIEW_DEPTH || (color !== "w" && color !== "b") ||
       !LICHESS_GAME.test(headers?.Site ?? "") || !FINAL_RESULTS.has(headers.Result) ||
       (headers.Variant && headers.Variant !== "Standard") || headers.WhiteTitle === "BOT" || headers.BlackTitle === "BOT") return null;
   const timeClass = headers.Event?.match(/^Rated (Bullet|Blitz|Rapid) game$/)?.[1].toLowerCase();
   const rating = readLichessRatings(headers)?.[color];
-  if (!supportsRating(PEER_PERFORMANCE[timeClass], rating)) return null;
+  if (!supportsRating(models[timeClass], rating)) return null;
 
   let observedSound = 0;
   let expectedSound = 0;
