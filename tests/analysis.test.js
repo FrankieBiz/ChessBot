@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { analyzeDecision, compareRootMoves, deepCheckDecision, parseReviewGame, scoreDecision } from '../analysis.js';
-import { StockfishEngine, summarizeLines } from '../engine.js';
+import { StockfishEngine, cpToWinProbability, summarizeLines, winLossToAccuracy } from '../engine.js';
 
-const line = (uci, winWhite, cp, depth = 14, continuation = []) => ({
-  pv: [uci, ...continuation], winWhite, eval: { type: 'cp', value: cp }, depth,
+// Grades now use the same Lichess win-probability curve as accuracy, so derive winWhite from cp.
+const line = (uci, _winWhite, cp, depth = 14, continuation = []) => ({
+  pv: [uci, ...continuation], winWhite: cpToWinProbability(cp), eval: { type: 'cp', value: cp }, depth,
 });
 
 test('PGN replay honors Black-to-move setup positions and actual mate', () => {
@@ -29,12 +30,12 @@ test('outside the top two, the root comparison searches both leaders and the pla
     assert.equal(depth, 14);
     assert.deepEqual(options.searchMoves, ['e2e4', 'd2d4', 'a2a3']);
     assert.equal(options.multiPv, 3);
-    return summarizeLines([line('e2e4', 64, 70), line('d2d4', 60, 52), line('a2a3', 52, 15)], 'w');
+    return summarizeLines([line('e2e4', 64, 250), line('d2d4', 60, 180), line('a2a3', 52, 50)], 'w');
   } };
   const result = await compareRootMoves(engine, positions[0], 'a2a3', 14, root);
   const scored = scoreDecision(positions[0], positions[1], result, 0);
-  assert.equal(scored.winLoss, 12);
-  assert.equal(scored.cpLoss, 55);
+  assert.ok(Math.abs(scored.winLoss - 16.92) < 0.02);
+  assert.equal(scored.cpLoss, 200);
   assert.equal(scored.classification.key, 'mistake');
 });
 
@@ -45,6 +46,21 @@ test('the top move scores 100 even when a separate next-position search would sw
   const scored = scoreDecision(positions[0], positions[1], { root, played: best }, 0);
   assert.equal(scored.accuracy, 100);
   assert.equal(scored.cpLoss, 0);
+});
+
+test('move grades share the Lichess curve with move accuracy, not Stockfish WDL', () => {
+  const { positions } = parseReviewGame('1. a3 *');
+  // The same decision reads as a 30.7-point WDL loss but a 10.0-point Lichess loss.
+  const best = { pv: ['e2e4'], eval: { type: 'cp', value: 110 }, winWhite: 80.65, depth: 16 };
+  const played = { pv: ['a2a3'], eval: { type: 'cp', value: 0 }, winWhite: 50, depth: 16 };
+  const root = summarizeLines([best, played], 'w');
+  const review = scoreDecision(positions[0], positions[1], { root, played }, 0);
+  assert.equal(review.classification.key, 'inaccuracy');
+  assert.ok(Math.abs(review.winLoss - 9.989528148674822) < 1e-9);
+  assert.equal(review.accuracy, winLossToAccuracy(review.winLoss));
+  assert.ok(review.accuracy > 60, `expected a 10-point loss to keep useful accuracy, got ${review.accuracy}`);
+  // The human-choice model keeps its own WDL-calibrated loss for its trained coefficients.
+  assert.ok(Math.abs(review.modelWinLoss - 30.65) < 1e-9);
 });
 
 test('uses the pair of recorded clocks at the resulting position and clears missing clocks', () => {
@@ -70,7 +86,7 @@ test('leaves practical points out of the engine accuracy calculation', () => {
   const played = line('e1f1', 51, 0);
   const root = summarizeLines([best, played], 'w');
   const result = scoreDecision(positions[8], positions[9], { root, played }, 0);
-  assert.equal(result.winLoss, 11);
+  assert.ok(Math.abs(result.winLoss - 9.1025897192) < 1e-9);
   assert.equal(result.cpLoss, 100);
   assert.ok(result.practicalImpact?.loss > 0);
   assert.equal(result.accuracy,
@@ -160,8 +176,8 @@ test('a recheck with no exact result retains the baseline and keeps the Stockfis
 
 test('marks a grade borderline when a required broad search cannot finish', async () => {
   const { positions: [before, after] } = parseReviewGame('1. a3 *');
-  const first = summarizeLines([line('e2e4', 65.4, 140), line('a2a3', 50, 0)], 'w');
-  const second = summarizeLines([line('e2e4', 62.1, 120, 16), line('a2a3', 50, 0, 16)], 'w');
+  const first = summarizeLines([line('e2e4', 65.4, 200), line('a2a3', 50, 0)], 'w');
+  const second = summarizeLines([line('e2e4', 62.1, 150, 16), line('a2a3', 50, 0, 16)], 'w');
   const searches = [];
   const engine = { analyzePosition(fen, depth) {
     searches.push(depth);
@@ -175,10 +191,10 @@ test('marks a grade borderline when a required broad search cannot finish', asyn
 
 test('rechecks moves close to a grade threshold and resolves a grade that moved between depths', async () => {
   const { positions } = parseReviewGame('1. a3 *');
-  const first = summarizeLines([line('e2e4', 55, 70), line('a2a3', 52.2, 65)], 'w');
-  const second = summarizeLines([line('e2e4', 55, 70, 16), line('a2a3', 51.6, 62, 16)], 'w');
-  const third = summarizeLines([line('e2e4', 55, 70, 18), line('a2a3', 51.5, 60, 18),
-    line('d2d4', 50, 56, 18)], 'w');
+  const first = summarizeLines([line('e2e4', 55, 250), line('a2a3', 52.2, 120)], 'w');
+  const second = summarizeLines([line('e2e4', 55, 250, 16), line('a2a3', 51.6, 170, 16)], 'w');
+  const third = summarizeLines([line('e2e4', 55, 250, 18), line('a2a3', 51.5, 170, 18),
+    line('d2d4', 50, 160, 18)], 'w');
   const searches = [];
   const engine = { analyzePosition(fen, depth, opts) {
     searches.push([depth, opts.multiPv]);
@@ -192,10 +208,10 @@ test('rechecks moves close to a grade threshold and resolves a grade that moved 
 
 test('does not confirm special praise when the winning gap disappears at the next depth', async () => {
   const { positions } = parseReviewGame('1. e4 *');
-  const first = summarizeLines([line('e2e4', 67, 130), line('d2d4', 41, -55)], 'w');
-  const second = summarizeLines([line('e2e4', 61, 95, 16), line('d2d4', 57, 78, 16)], 'w');
-  const third = summarizeLines([line('e2e4', 61, 95, 18), line('d2d4', 59, 86, 18),
-    line('c2c4', 57, 76, 18)], 'w');
+  const first = summarizeLines([line('e2e4', 67, 250), line('d2d4', 41, -200)], 'w');
+  const second = summarizeLines([line('e2e4', 61, 250, 16), line('d2d4', 57, 200, 16)], 'w');
+  const third = summarizeLines([line('e2e4', 61, 250, 18), line('d2d4', 59, 200, 18),
+    line('c2c4', 57, 180, 18)], 'w');
   let calls = 0;
   const engine = { analyzePosition() { return calls++ === 0 ? second : third; } };
   const comparison = await analyzeDecision(engine, positions[0], positions[1], 14, first);
@@ -217,10 +233,10 @@ test('an equally evaluated alternative earns Best without sole-move praise', () 
 
 test('checks a Miss with the same opponent move context used by the final grade', async () => {
   const { positions } = parseReviewGame('1. a3 *');
-  const first = summarizeLines([line('e2e4', 64, 150), line('a2a3', 51, 15)], 'w');
-  const second = summarizeLines([line('e2e4', 66, 155, 16), line('a2a3', 53, 25, 16)], 'w');
-  const third = summarizeLines([line('e2e4', 66.2, 156, 18), line('a2a3', 53, 25, 18),
-    line('c2c4', 51, 15, 18)], 'w');
+  const first = summarizeLines([line('e2e4', 64, 160), line('a2a3', 51, 40)], 'w');
+  const second = summarizeLines([line('e2e4', 66, 180, 16), line('a2a3', 53, 40, 16)], 'w');
+  const third = summarizeLines([line('e2e4', 66.2, 185, 18), line('a2a3', 53, 40, 18),
+    line('c2c4', 51, 35, 18)], 'w');
   let searches = 0;
   const engine = { analyzePosition() { return searches++ === 0 ? second : third; } };
   const result = await analyzeDecision(engine, positions[0], positions[1], 14, first, 20);
@@ -240,20 +256,20 @@ test('the broad pass runs when the label is at risk and skips stable same-grade 
   const { needsBroaderSearch } = await import('../analysis.js');
   const pass = (key, winLoss) => ({ key, winLoss });
   // The grade changed between depths.
-  assert.equal(needsBroaderSearch(pass('mistake', 19), pass('blunder', 21)), true);
+  assert.equal(needsBroaderSearch(pass('mistake', 29), pass('blunder', 31)), true);
   // Praise must hold its loss as well as its label.
   assert.equal(needsBroaderSearch(pass('great', 0), pass('great', 3)), true);
   assert.equal(needsBroaderSearch(pass('great', 0), pass('great', 1)), false);
   // A blunder drifting deeper into blunder territory, or an inaccuracy moving inside its band, is settled.
-  assert.equal(needsBroaderSearch(pass('blunder', 35), pass('blunder', 31)), false);
+  assert.equal(needsBroaderSearch(pass('blunder', 35), pass('blunder', 40)), false);
   assert.equal(needsBroaderSearch(pass('inaccuracy', 9.8), pass('inaccuracy', 7.2)), false);
   // A mistake sliding toward the Inaccuracy line at the same rate would reach it.
   assert.equal(needsBroaderSearch(pass('mistake', 15.4), pass('mistake', 12.1)), true);
   assert.equal(needsBroaderSearch(pass('mistake', 15.4), pass('mistake', 12.1), 'grade-change'), false);
   // Small movements never trigger it, and the benchmark modes keep their meaning.
   assert.equal(needsBroaderSearch(pass('mistake', 12), pass('mistake', 10.5)), false);
-  assert.equal(needsBroaderSearch(pass('blunder', 35), pass('blunder', 31), 'unstable'), true);
-  assert.equal(needsBroaderSearch(pass('mistake', 19), pass('blunder', 21), 'never'), false);
+  assert.equal(needsBroaderSearch(pass('blunder', 35), pass('blunder', 40), 'unstable'), true);
+  assert.equal(needsBroaderSearch(pass('mistake', 29), pass('blunder', 31), 'never'), false);
 });
 
 test('Deep Check reranks the played move at the discovery depth and flags a changed grade', async () => {
@@ -265,7 +281,7 @@ test('Deep Check reranks the played move at the discovery depth and flags a chan
       line('e2e4', 70, 155, depth - 1), line('d2d4', 62, 110, depth - 1),
       line('c2c4', 59, 90, depth - 1),
     ], 'w');
-    const played = line('a2a3', depth === 17 ? 48 : 53, 25, depth);
+    const played = line('a2a3', depth === 17 ? 48 : 53, depth === 17 ? 25 : 60, depth);
     return summarizeLines([
       line('e2e4', 69, 154, depth), line('d2d4', 63, 110, depth), line('c2c4', 59, 90, depth), played,
     ], 'w');
@@ -274,9 +290,11 @@ test('Deep Check reranks the played move at the discovery depth and flags a chan
   assert.deepEqual(searches.map(({ depth, multiPv }) => [depth, multiPv]), [[18, 3], [17, 4], [20, 3], [19, 4]]);
   assert.equal(searches.reduce((sum, { nodes }) => sum + nodes, 0), 9_000_000);
   assert.deepEqual(searches[1].searchMoves, ['e2e4', 'd2d4', 'c2c4', 'a2a3']);
-  assert.deepEqual(comparison.passes, [
-    { depth: 17, key: 'blunder', winLoss: 21 }, { depth: 19, key: 'mistake', winLoss: 16 },
+  assert.deepEqual(comparison.passes.map(({ depth, key }) => ({ depth, key })), [
+    { depth: 17, key: 'mistake' }, { depth: 19, key: 'inaccuracy' },
   ]);
+  assert.ok(Math.abs(comparison.passes[0].winLoss - 11.5083200775) < 1e-9);
+  assert.ok(Math.abs(comparison.passes[1].winLoss - 8.307231593) < 1e-9);
   assert.equal(comparison.searchConfidence, 'borderline');
   assert.equal(scoreDecision(before, after, comparison, 0).depth, 19);
 });
@@ -318,7 +336,7 @@ test('Deep Check corroborates praise from two distinct deeper depths', async () 
   const { positions: [before, after] } = parseReviewGame('1. e4 *');
   const engine = { analyzePosition(fen, depth) {
     return summarizeLines([
-      line('e2e4', 68, 155, depth), line('d2d4', 42, -44, depth), line('c2c4', 40, -60, depth),
+      line('e2e4', 68, 155, depth), line('d2d4', 42, -100, depth), line('c2c4', 40, -120, depth),
     ], 'w');
   } };
   const comparison = await deepCheckDecision(engine, before, after, 12);

@@ -36,7 +36,20 @@ export function computeCapturedAndMaterial(fen) {
   const capturedByWhite = [];
   const capturedByBlack = [];
 
+  // A promoted pawn is still on the board as another piece, so do not report it as captured.
+  const promoted = (color) => order.slice(0, 4)
+    .reduce((sum, piece) => sum + Math.max(0, present[color][piece] - STARTING_COUNTS[piece]), 0);
+  const promotedWhite = promoted("w");
+  const promotedBlack = promoted("b");
+
   for (const piece of order) {
+    if (piece === "p") {
+      const missingBlack = Math.max(0, STARTING_COUNTS.p - present.b.p - promotedBlack);
+      const missingWhite = Math.max(0, STARTING_COUNTS.p - present.w.p - promotedWhite);
+      for (let i = 0; i < missingBlack; i++) capturedByWhite.push(UNICODE_PIECES.b[piece]);
+      for (let i = 0; i < missingWhite; i++) capturedByBlack.push(UNICODE_PIECES.w[piece]);
+      continue;
+    }
     const missingBlack = Math.max(0, STARTING_COUNTS[piece] - present.b[piece]);
     for (let i = 0; i < missingBlack; i++) capturedByWhite.push(UNICODE_PIECES.b[piece]);
     const missingWhite = Math.max(0, STARTING_COUNTS[piece] - present.w[piece]);

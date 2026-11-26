@@ -6,7 +6,7 @@ import {
   classifyMove,
   computeMaterialBalanceFromFen,
   computeMoveCpLoss,
-  evalToWinWhite,
+  evalToWinForColor,
   winLossToAccuracy,
 } from "./engine.js";
 import { parseClockSeconds, parseTimeControl, practicalImpact } from "./practical-model.js";
@@ -21,7 +21,7 @@ const moverScore = (whiteScore, color) => color === "w" ? whiteScore : 100 - whi
  * broadPass chooses when the third, broader pass runs after the confirming pass:
  * - "grade-at-risk" (default): the grade changed, Great/Brilliant praise did not hold, or a
  *   same-grade loss moved by more than PASS_AGREEMENT_LOSS points toward a severity line
- *   (Inaccuracy/Mistake at 10, Mistake/Blunder at 20) far enough to reach it at the same rate.
+ *   (Inaccuracy/Mistake at 10, Mistake/Blunder at 30) far enough to reach it at the same rate.
  * - "grade-change": only the first two conditions.
  * - "unstable": the v3.3 rule, which reran every same-grade loss that moved by more than 2.5 points.
  * - "never" and "always" exist for the search benchmark.
@@ -34,7 +34,7 @@ export const SEARCH_POLICY = {
   broadPass: "grade-at-risk",
 };
 const PASS_AGREEMENT_LOSS = 2.5;
-const SEVERITY_LIMITS = [GRADE_LOSS_LIMITS.inaccuracy, GRADE_LOSS_LIMITS.mistake];
+const SEVERITY_LIMITS = [GRADE_LOSS_LIMITS.inaccuracy, GRADE_LOSS_LIMITS.blunder];
 const DEEP_CHECK_PASSES = [1_500_000, 3_000_000];
 const DEEP_CHECK_MAX_DEPTH = 26;
 
@@ -191,10 +191,11 @@ function gradeInputs(before, after, { root, played }) {
     grade: {
       playedUci: move.uci,
       bestMoveUci: root.bestMove,
-      winBefore: moverScore(root.winWhite, move.color),
-      winAfter: moverScore(playedEval.winWhite, move.color),
+      // Grade on the same win-probability curve as move accuracy and the move card's loss.
+      winBefore: evalToWinForColor(root.eval, move.color),
+      winAfter: evalToWinForColor(playedEval.eval, move.color),
       legalMoves: before.legalMoves,
-      secondScore: Number.isFinite(root.secondWinWhite) ? moverScore(root.secondWinWhite, move.color) : null,
+      secondScore: root.secondEval ? evalToWinForColor(root.secondEval, move.color) : null,
       equivalentBest: root.eval.type === playedEval.eval.type && root.eval.value === playedEval.eval.value,
       isSacrifice: !forced && sacrificeInLine(before, after, played),
       missedMate: forced ? null : detectMissedMate(root.eval, playedEval.eval, move.color),
@@ -346,18 +347,23 @@ export function scoreDecision(before, after, comparison, prevOpponentWinLoss) {
   const { playedEval, forced, grade } = gradeInputs(before, after, comparison);
   const classification = classifyMove({ ...grade, confirmed, prevOpponentWinLoss });
   const { color } = after.move;
-  const accuracyLoss = moverScore(evalToWinWhite(root.eval), color) -
-    moverScore(evalToWinWhite(playedEval.eval), color);
+  // Move accuracy uses the graded expected-score loss, so a Mistake cannot show as 90% accuracy.
+  // modelWinLoss keeps the human-choice model's Stockfish WDL scale, which its coefficients were fitted on.
+  const rawModelLoss = moverScore(root.winWhite, color) - moverScore(playedEval.winWhite, color);
+  const modelWinLoss = Number.isFinite(rawModelLoss)
+    ? Math.max(0, Number(rawModelLoss.toFixed(10)))
+    : classification.winLoss;
   return {
     classification,
     forced,
-    accuracy: winLossToAccuracy(accuracyLoss),
+    accuracy: winLossToAccuracy(classification.winLoss),
     cpLoss: computeMoveCpLoss(root.eval, playedEval.eval, color),
     practicalImpact: estimateImpact(before, after, root, played),
     difficulty: estimateDifficulty(before, root.eval, color),
     winBefore: grade.winBefore,
     winAfter: grade.winAfter,
     winLoss: classification.winLoss,
+    modelWinLoss,
     pvGap: root.pvGap,
     bestMoveUci: root.bestMove,
     playedPv: played.pv,

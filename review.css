@@ -1466,6 +1466,7 @@ html, body {
 
 @media (prefers-reduced-motion: reduce) {
   .move-cell.is-provisional .move-cell-badge { animation: none; }
+  .square-badge { animation: none; }
 }
 
 /* Drills Tab */

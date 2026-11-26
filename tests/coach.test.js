@@ -1,7 +1,15 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { generateLocalCoachInsight } from '../coach.js';
+import { computeCapturedAndMaterial, generateLocalCoachInsight } from '../coach.js';
 import { CLASSIFICATIONS } from '../engine.js';
+
+test('a promoted pawn is not shown as a captured pawn', () => {
+  // White has two queens and only seven pawns: one pawn promoted and is still on the board.
+  const material = computeCapturedAndMaterial('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPP1/3QKQ2 w - - 0 1');
+  assert.deepEqual(material.capturedByWhite, []);
+  assert.deepEqual(material.capturedByBlack, ['♖', '♖', '♗', '♗', '♘', '♘']);
+  assert.equal(material.whiteLead, -14);
+});
 
 test('the coach acknowledges checkmate regardless of the move grade', () => {
   const insight = generateLocalCoachInsight({

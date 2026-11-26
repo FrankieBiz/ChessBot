@@ -60,6 +60,19 @@ export function evalToWinWhite(evalObj) {
   return cpToWinProbability(evalObj.value);
 }
 
+/** The moving side's expected score (0–100) on the Lichess win-probability curve. */
+export function evalToWinForColor(evalObj, color) {
+  const white = evalToWinWhite(evalObj);
+  return color === "w" ? white : 100 - white;
+}
+
+/** Expected-score points a move loses for its mover on the Lichess win-probability curve. */
+export function evalMoveWinLoss(beforeEval, afterEval, color) {
+  const loss = evalToWinForColor(beforeEval, color) - evalToWinForColor(afterEval, color);
+  // Discard floating-point subtraction noise at an inclusive grade boundary.
+  return Math.max(0, Number(loss.toFixed(10)));
+}
+
 /**
  * Compute per-move Centipawn Loss (0..1000) for the moving side.
  */
@@ -132,14 +145,16 @@ export function computeProGameAccuracy(timeline, playerMoves) {
  * Format an eval object (White's perspective) for display (e.g., "+2.4", "-0.8", "M3", "-M2").
  */
 export function formatEval(evalObj) {
-  if (!evalObj) return "0.0";
+  if (!evalObj || !Number.isFinite(evalObj.value)) return "0.0";
   if (evalObj.type === "mate") {
     if (evalObj.value === 0) return "#";
     const sign = evalObj.value > 0 ? "" : "-";
     return `${sign}M${Math.abs(evalObj.value)}`;
   }
   const pawns = evalObj.value / 100;
-  const sign = pawns > 0.04 ? "+" : "";
+  // Avoid "-0.0" and "+0.0" for evaluations that round to zero.
+  if (Math.abs(pawns) < 0.05) return "0.0";
+  const sign = pawns > 0 ? "+" : "";
   return `${sign}${pawns.toFixed(1)}`;
 }
 
@@ -161,7 +176,7 @@ export function computeMaterialBalanceFromFen(fen) {
   return white - black;
 }
 
-export const GRADE_LOSS_LIMITS = { excellent: 3, good: 5, inaccuracy: 10, mistake: 20 };
+export const GRADE_LOSS_LIMITS = { excellent: 3, good: 5, inaccuracy: 10, mistake: 20, blunder: 30 };
 
 /** Grade only the quality that the evaluated decision actually establishes. */
 export function classifyMove({
@@ -201,6 +216,8 @@ export function classifyMove({
     const missedOpportunity = prevOpponentWinLoss >= 15 && winBefore >= 65 && winAfter < 60;
     return classified(missedOpportunity ? "miss" : "mistake");
   }
+  // Lichess reserves Blunder for a loss of 30 points or more; 20–30 stays a Mistake.
+  if (winLoss <= GRADE_LOSS_LIMITS.blunder) return classified("mistake");
   return classified("blunder");
 }
 
@@ -230,6 +247,9 @@ export function parseUciInfoLine(line, turn = "w") {
 
 export function summarizeLines(lines, turn) {
   const [first, second] = lines;
+  // The gap that drives praise and deeper checks is on the same curve as the grade and accuracy.
+  const firstWin = evalToWinWhite(first.eval);
+  const secondWin = second ? evalToWinWhite(second.eval) : null;
   return {
     ...first,
     lines,
@@ -238,7 +258,7 @@ export function summarizeLines(lines, turn) {
     secondWinWhite: second?.winWhite ?? null,
     secondMove: second?.pv[0] ?? null,
     secondPv: second?.pv ?? [],
-    pvGap: second ? Math.max(0, (first.winWhite - second.winWhite) * (turn === "w" ? 1 : -1)) : 0,
+    pvGap: second ? Math.max(0, (firstWin - secondWin) * (turn === "w" ? 1 : -1)) : 0,
   };
 }
 

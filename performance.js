@@ -1,5 +1,4 @@
 import { difficultyFeatures, readLichessRatings } from "./difficulty-model.js";
-import { GRADE_LOSS_LIMITS } from "./engine.js";
 import { PEER_PERFORMANCE } from "./performance-data.js";
 
 const MIN_DECISIONS = 12;
@@ -7,6 +6,8 @@ const MIN_PRIOR_GAMES = 5;
 const MAX_PRIOR_GAMES = 20;
 const BASELINE_AGE = 180 * 86_400_000;
 const REVIEW_DEPTH = 16;
+// The peer model and the human-choice model were trained on Stockfish WDL losses, not the Lichess curve.
+const MODEL_SOUND_LOSS = 5;
 const KNOWN_SPEEDS = new Set(["ultrabullet", "bullet", "blitz", "rapid", "classical", "daily", "correspondence"]);
 const UNKNOWN_PLAYERS = new Set(["?", "-", "white", "black", "player", "anonymous", "unknown"]);
 const FINAL_RESULTS = new Set(["1-0", "0-1", "1/2-1/2"]);
@@ -154,12 +155,13 @@ export function peerPerformance({ positions, moveReviews, color, headers, depth,
     if (positions[ply].move?.color !== color) continue;
     const review = moveReviews[ply];
     if (!review) return null;
-    const { peerDifficulty: prediction, winLoss, forced } = review;
+    const { peerDifficulty: prediction, modelWinLoss, winLoss, forced } = review;
+    const observedLoss = Number.isFinite(modelWinLoss) ? modelWinLoss : winLoss;
     if (forced || prediction?.rating !== rating || prediction?.timeClass !== timeClass ||
-        !Number.isFinite(prediction.chance) || prediction.chance < 0 || prediction.chance > 1 || !Number.isFinite(winLoss)) continue;
+        !Number.isFinite(prediction.chance) || prediction.chance < 0 || prediction.chance > 1 || !Number.isFinite(observedLoss)) continue;
     decisions++;
     expectedSound += prediction.chance;
-    if (winLoss <= GRADE_LOSS_LIMITS.good) observedSound++;
+    if (observedLoss <= MODEL_SOUND_LOSS) observedSound++;
   }
   return decisions >= MIN_DECISIONS ? { observedSound, expectedSound, decisions, rating, timeClass, pool: "lichess" } : null;
 }

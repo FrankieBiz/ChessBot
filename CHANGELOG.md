@@ -6,7 +6,14 @@ All notable changes to ChessBot are recorded here. The format follows [Keep a Ch
 
 ### Fixed
 
+- **Move grades and move accuracy now use the same expected-score curve.** Grades were computed from Stockfish's WDL self-play estimate while accuracy, Decision Quality, drills, and practical impact used the Lichess centipawn-to-win curve. A move losing about 4 win-probability points could be graded Mistake and still show 84% move accuracy, or be graded Excellent and show 58%. Grades, accuracy, Decision Quality, drills, the eval bar, and the chart now use the Lichess curve, so the move card's grade, expected-score loss, and Move % always agree. The eval bar's tooltip still shows Stockfish's WDL estimate. The human-choice find-rate model keeps its own WDL-calibrated loss.
+- **Blunder now starts above 30 expected-score points, as in Lichess.** Losses from 20 to 30 were previously called Blunders; they are now Mistakes.
 - **One huge blunder no longer halves the accuracy score.** Game accuracy averages a weighted mean and a harmonic mean of each move's accuracy. A move that threw away about 89 or more points of winning chances scored 0%, which made the harmonic mean 0 and capped the game at half the weighted mean, below 50% however well the rest was played. As in Lichess, each move now counts as at least 1% in the harmonic mean. Phase accuracy and the comparison with your earlier games use the same fix. Games you reviewed before keep their saved score until you review them again.
+- **A promoted pawn is no longer listed as a captured pawn.** The captured-pieces strip inferred captures from the current board and counted every missing pawn, including pawns that had promoted and were still on the board.
+- **Chess.com reviews use the signed-in account to choose your side.** The bottom player was assumed to be you, so reviewing a game where the board was not on your side could orient the board and open the Mistakes tab for the wrong player.
+- **A retry that Stockfish cannot check is no longer called wrong.** The in-review drill now says it couldn't verify the move and lets you try again, instead of showing the generic rejection.
+- Reduced-motion preferences now disable the floating badge and loading-spinner animations and the move-list smooth scroll.
+- Evaluations that round to zero show `0.0` instead of `-0.0` or `+0.0`.
 
 ## [3.8.0] - 2026-11-25
 

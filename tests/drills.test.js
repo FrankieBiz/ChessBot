@@ -36,6 +36,12 @@ test('an ordinary drill accepts a move within three expected-score points, from 
   assert.equal(judgeDrillAttempt({ ...base, color: 'b', attemptUci: 'd7d5', comparison: compared(40, 42, { type: 'cp', value: -30 }) }).verdict, 'alternative');
 });
 
+test('an unverified drill attempt says Stockfish could not check it', () => {
+  assert.equal(
+    drillRejection({ attemptSan: 'Nf3', review: plainReview, judgement: { verdict: 'unknown' } }),
+    "Couldn't check Nf3 with Stockfish. Try another move.");
+});
+
 test('mate drills say what to look for', () => {
   assert.match(drillPrompt({ playedSan: 'b8=Q', review: mateReview }), /forced mate in 2/);
   assert.match(drillPrompt({ playedSan: 'a3', review: plainReview }), /\(Mistake\)/);

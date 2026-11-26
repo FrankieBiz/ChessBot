@@ -1,4 +1,5 @@
 // Pure rules for retrying a reviewed decision.
+import { evalMoveWinLoss } from "./engine.js";
 import { moverMateDistance } from "./tactics.js";
 
 /** An alternative solves an ordinary drill when it loses at most this many expected-score points. */
@@ -21,7 +22,10 @@ export function judgeDrillAttempt({ attemptUci, gameUci, review, color, delivers
   if (!comparison?.root || !comparison?.played) return { verdict: "unknown" };
 
   const sign = color === "w" ? 1 : -1;
-  const loss = Math.max(0, (comparison.root.winWhite - comparison.played.winWhite) * sign);
+  // Judge on the graded Lichess curve when the comparison has evals; older stored puzzles keep winWhite.
+  const loss = comparison.root.eval && comparison.played.eval
+    ? evalMoveWinLoss(comparison.root.eval, comparison.played.eval, color)
+    : Math.max(0, (comparison.root.winWhite - comparison.played.winWhite) * sign);
   const mate = moverMateDistance(comparison.played.eval, color);
   const target = review.missedMate?.drill ? review.missedMate.available : null;
   if (target) {
@@ -46,6 +50,9 @@ export function drillPrompt({ playedSan, review }) {
 
 /** Feedback for a rejected or unverified attempt. */
 export function drillRejection({ attemptSan, judgement, review }) {
+  if (judgement.verdict === "unknown") {
+    return `Couldn't check ${attemptSan} with Stockfish. Try another move.`;
+  }
   if (judgement.reason === "needs-mate") {
     const goal = judgement.target === 1 ? "a mate in 1" : `a forced mate in ${judgement.target}`;
     const result = judgement.mate > 0 ? `${attemptSan} mates in ${judgement.mate}` : `${attemptSan} doesn't force mate`;

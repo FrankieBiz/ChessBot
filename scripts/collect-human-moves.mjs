@@ -139,7 +139,8 @@ async function evaluate(engine, { source, before, after }) {
     const comparison = await compareRootMoves(engine, before, after.move.uci, reviewDepth, root);
     const review = scoreDecision(before, after, comparison, 0);
     const lichessPosition = source.platform === "lichess" ? { ...before, lichessRatings: source.ratings } : before;
-    row.target = { winLoss: review.winLoss, sound: review.winLoss <= 5, grade: review.classification.key };
+    const loss = Number.isFinite(review.modelWinLoss) ? review.modelWinLoss : review.winLoss;
+    row.target = { winLoss: loss, sound: loss <= 5, grade: review.classification.key };
     row.cohort = {
       shipped: estimateDifficulty(lichessPosition, root.eval, color),
       position: difficultyFeatures({ ...before, lichessRatings: null }, root.eval, color),

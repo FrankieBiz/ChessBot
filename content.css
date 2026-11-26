@@ -75,6 +75,10 @@
   }
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .clgr-spinner { animation: none; }
+}
+
 .clgr-status-text {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   font-size: 12px;

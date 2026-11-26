@@ -187,12 +187,19 @@ async function fetchGameWithRetry(candidateUsernames, gameId) {
   );
 }
 
-function detectPlayedColor(game, primaryUsername) {
-  const lower = (primaryUsername || "").trim().toLowerCase();
-  const whiteUser = (game.white?.username || "").toLowerCase();
-  const blackUser = (game.black?.username || "").toLowerCase();
-  if (lower && blackUser === lower) return "b";
-  if (lower && whiteUser === lower) return "w";
+/**
+ * Determine which color the user played, preferring the signed-in account over the bottom player.
+ * The bottom player is not always the user, so the account name (when present) decides first.
+ */
+function detectPlayedColor(game, primaryUsername, accountUsername = null) {
+  const whiteUser = (game.white?.username || "").trim().toLowerCase();
+  const blackUser = (game.black?.username || "").trim().toLowerCase();
+  for (const name of [accountUsername, primaryUsername]) {
+    const lower = (name || "").trim().toLowerCase();
+    if (!lower) continue;
+    if (blackUser === lower) return "b";
+    if (whiteUser === lower) return "w";
+  }
   return "w";
 }
 
@@ -207,7 +214,7 @@ function buildGamePayload(game, gameId, primaryUsername, accountUsername = null)
     endTime: game.end_time || Math.floor(Date.now() / 1000),
     username: primaryUsername,
     accountUsername,
-    playedColor: detectPlayedColor(game, primaryUsername),
+    playedColor: detectPlayedColor(game, primaryUsername, accountUsername),
     white: {
       username: game.white?.username || "White",
       rating: game.white?.rating ?? null,
@@ -233,8 +240,9 @@ async function saveGameToStorage(payload) {
     recentGames: filtered.slice(0, 15),
   };
 
-  if (stored.fallbackUsername && !isValidUsername(stored.fallbackUsername)) {
-    updates.fallbackUsername = payload.username || "";
+  // Auto-clean a stale invalid fallback username only when the signed-in account is known.
+  if (stored.fallbackUsername && !isValidUsername(stored.fallbackUsername) && isValidUsername(payload.accountUsername)) {
+    updates.fallbackUsername = payload.accountUsername;
   }
 
   await chrome.storage.local.set(updates);
@@ -273,7 +281,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       }
 
       const { game, matchedUser } = await fetchGameWithRetry(candidates, gameId);
-      const primaryUser = candidates[0] || matchedUser;
+      const primaryUser = accountUsername || matchedUser || candidates[0];
       const payload = buildGamePayload(game, gameId, primaryUser, accountUsername);
       await saveGameToStorage(payload);
 
