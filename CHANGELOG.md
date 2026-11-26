@@ -4,6 +4,8 @@ All notable changes to ChessBot are recorded here. The format follows [Keep a Ch
 
 ## [Unreleased]
 
+## [3.8.2] - 2026-11-26
+
 ### Changed
 
 - **Game accuracy now follows Chess.com's CAPS2 scale instead of Lichess's game blend.** The old Lichess-style score used a volatility-weighted mean plus a harmonic mean; one blunder among many good moves could pull a game 15–25 points below Chess.com. Game accuracy now uses a calibrated Chess.com-compatible move curve and power mean, scores forced moves and sound book matches as 100, and is fitted to public Chess.com `accuracies` labels. The Lichess-style value and Chess.com's own Game Review score appear under each ring when available. Saved games store an accuracy-model version; older summaries are excluded from accuracy averages and personal medians until re-reviewed.
@@ -128,7 +130,8 @@ Versions 3.5.0, 3.6.0, and 3.7.0 were never released on their own. This release 
 
 This is the first version in this repository. Earlier releases (3.1 and 3.2) were developed before version control. It includes local Stockfish 19 review, move grades, Lichess-style accuracy, Decision Quality, the built-in coach with optional AI explanations, the Mistakes trainer, clock-aware practical impact, and the cohort difficulty model.
 
-[Unreleased]: https://github.com/FrankieBiz/ChessBot/compare/v3.8.1...HEAD
+[Unreleased]: https://github.com/FrankieBiz/ChessBot/compare/v3.8.2...HEAD
+[3.8.2]: https://github.com/FrankieBiz/ChessBot/compare/v3.8.1...v3.8.2
 [3.8.1]: https://github.com/FrankieBiz/ChessBot/compare/v3.8.0...v3.8.1
 [3.8.0]: https://github.com/FrankieBiz/ChessBot/compare/v3.4.0...v3.8.0
 [3.7.0]: https://github.com/FrankieBiz/ChessBot/commit/41af3defc7e487ba0e43950efc2c2ad4f636f68e

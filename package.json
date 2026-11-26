@@ -1,6 +1,6 @@
 {
   "name": "chessbot-local-game-review",
-  "version": "3.8.1",
+  "version": "3.8.2",
   "description": "Private, offline chess game review with full-strength Stockfish 19 in the browser",
   "license": "GPL-3.0-or-later",
   "homepage": "https://github.com/FrankieBiz/ChessBot#readme",
