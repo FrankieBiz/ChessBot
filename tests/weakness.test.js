@@ -4,7 +4,7 @@ import { test } from "node:test";
 import { THEMES, gameDate, isLowClock, themeForTag, themeLabel, userResult } from "../weakness.js";
 import { parseReviewGame } from "../analysis.js";
 import { computeGameInsights } from "../coach.js";
-import { computeProGameAccuracy, evalToWinWhite } from "../engine.js";
+import { ACCURACY_MODEL_VERSION, computeGameAccuracy, computeProGameAccuracy, evalToWinWhite } from "../engine.js";
 import { pgnSideFor, confirmedSide, gameAccuracy, reportFilter, summarizeGame, userDecisions, weaknessReport } from "../weakness.js";
 import { decision } from "./fixtures/training.js";
 
@@ -131,21 +131,25 @@ test("Black's decisions use Black's clock and expected score, and forced moves a
   assert.deepEqual(userDecisions({ ...source, playedColor: "w" }).map((d) => d.ply), [1, 5]);
 });
 
-test("game accuracy matches the review page's overall and phase scores", () => {
+test("game accuracy uses the Chess.com-compatible scale and counts forced moves", () => {
   const source = clockReview();
   source.moveReviews = source.moveReviews.map((review, ply) => {
     if (!review) return review;
-    if (ply % 2 === 0) return { ...review, accuracy: 10 };
-    return ply === 3 ? { ...review, forced: true, accuracy: 0 } : { ...review, accuracy: 90 };
+    if (ply === 1) return { ...review, winLoss: 0, accuracy: 100 };
+    if (ply === 3) return { ...review, forced: true, winLoss: 0, accuracy: 0 };
+    return { ...review, winLoss: 20, accuracy: 40 };
   });
-  const { positions, evals, moveReviews } = source;
-  const winTimeline = evals.map((e) => evalToWinWhite(e.eval));
-  const userMoves = [1, 5].map((ply) => ({ ply, accuracy: 90 }));
+  const { positions, moveReviews } = source;
   const result = gameAccuracy({ ...source, playedColor: "w" });
-  assert.equal(result.accuracy, computeProGameAccuracy(winTimeline, userMoves));
-  assert.deepEqual(result.phaseAccuracy, computeGameInsights({ positions, winTimeline, moveReviews, playedColor: "w" }));
-  const withForced = computeProGameAccuracy(winTimeline, [{ ply: 1, accuracy: 90 }, { ply: 3, accuracy: 0 }, { ply: 5, accuracy: 90 }]);
-  assert.notEqual(result.accuracy, withForced);
+  const expectedMoves = [{ winLoss: 0 }, { winLoss: 0, forced: true }, { winLoss: 20 }];
+  assert.equal(result.accuracy, computeGameAccuracy(expectedMoves));
+  assert.equal(result.accuracyVersion, ACCURACY_MODEL_VERSION);
+  assert.deepEqual(result.phaseAccuracy, computeGameInsights({ positions, winTimeline: [], moveReviews, playedColor: "w" }));
+  // Forced moves are 100 in the new scale, but they must not be used for Lichess-style history.
+  const withoutForced = computeGameAccuracy([{ winLoss: 0 }, { winLoss: 20 }]);
+  assert.notEqual(result.accuracy, withoutForced);
+  assert.equal(result.lichessAccuracy,
+    computeProGameAccuracy(source.evals.map((e) => evalToWinWhite(e.eval)), [{ ply: 1, accuracy: 100 }, { ply: 5, accuracy: 40 }]));
 });
 
 test("a game summary keeps counts, clock totals, the best expected score, and each mistake", () => {
@@ -163,6 +167,8 @@ test("a game summary keeps counts, clock totals, the best expected score, and ea
     gameKey: "g", reviewedAt: 5, date: "2026-11-23", color: "w", result: 0.5, timeClass: "blitz",
     opponent: "Rival", depth: 16, decisions: 3, phaseMoves: { opening: 1, middlegame: 2, endgame: 0 },
     phaseAccuracy: { opening: 95, middlegame: 70, endgame: null }, accuracy: 81.5,
+    lichessAccuracy: null, accuracyVersion: ACCURACY_MODEL_VERSION,
+    chesscomAccuracy: null,
     clock: { lowDecisions: 1, otherDecisions: 1 }, maxExpectedScore: 88,
     mistakes: [
       { ply: 5, theme: "hanging", phase: "middlegame", lowClock: true, findChance: 75 },
@@ -187,7 +193,7 @@ function game(i, overrides = {}) {
   return {
     gameKey: `g${i}`, reviewedAt: 1000 + i, date: "2026-11-01", color: "w", result: 1, timeClass: "blitz",
     opponent: "", depth: 16, decisions: 20, phaseMoves: { opening: 5, middlegame: 10, endgame: 5 },
-    phaseAccuracy: { opening: 90, middlegame: 80, endgame: 70 }, accuracy: 80, clock: null,
+    phaseAccuracy: { opening: 90, middlegame: 80, endgame: 70 }, accuracy: 80, accuracyVersion: ACCURACY_MODEL_VERSION, clock: null,
     maxExpectedScore: 60, mistakes: [], ...overrides,
   };
 }
@@ -251,6 +257,15 @@ test("phase and overall accuracy are weighted by the user's moves", () => {
   assert.equal(phases.endgame.games, 4);
   close(phases.endgame.accuracy, 70);
   close(overall, 76);
+});
+
+test("the report excludes old accuracy scales from accuracy averages", () => {
+  const games = [0, 1, 2, 3, 4].map((i) => game(i));
+  games[0] = { ...games[0], accuracyVersion: 1, accuracy: 1 };
+  const report = weaknessReport(games);
+  assert.equal(report.accuracyGames, 4);
+  assert.equal(report.legacyAccuracyGames, 1);
+  close(report.overall, 80);
 });
 
 test("low-clock rates use only games with clocks", () => {

@@ -187,6 +187,22 @@ python3 scripts/benchmark-game-rating.py --train 2026-02.pgn.zst \
   --validation 2026-05.pgn.zst --test 2026-10.pgn.zst
 ```
 
+## Chess.com-compatible game accuracy
+
+Chess.com's CAPS2 formula is proprietary. Its public description says book moves score as best, moves are mostly averaged, and multiple blunders receive some relief. The previous Lichess-style blend (volatility-weighted mean + harmonic mean) is especially different when one blunder sits among many good moves: the harmonic half can pull a game down 15–25 points below Chess.com.
+
+The new game score fits a continuous CAPS2-compatible model on public Chess.com `accuracies` labels from the PubAPI:
+
+- per-move score: `100 × exp(−0.04206615 × loss^1.47572392)`, where `loss` is expected-score points lost on the Lichess curve;
+- game score: power mean with exponent `0.47131702`, forced moves and sound book matches score 100;
+- output capped to 0–100 and rounded to 0.1.
+
+The fit used 72 rated sides and 24 held-out sides from 2026 Chess.com blitz/rapid games between 700 and 2300, with both sides scored. The held-out mean absolute error was 2.6 points; the current Lichess-style blend was 7.7 points on the same 24 sides. A separate 46-side depth-16 check, including deliberately difficult positions, gave 4.4 points versus 10.8 for the Lichess blend. Individual games can still disagree by more than 10 points, especially low-rated rapid games and positions where Chess.com's stored review used a different engine depth.
+
+The app shows the Lichess-style score and Chess.com's own stored score under the rings when available. It does not claim to reproduce CAPS2 exactly. The model is local and offline; no game data leaves the browser. A small public-label regression fixture lives in `tests/fixtures/chesscom-accuracy.js`.
+
+[Chess.com public API accuracy field](https://www.chess.com/announcements/view/published-data-api) · [CAPS2 help](https://support.chess.com/en/articles/8708970-how-is-accuracy-in-analysis-determined) · [Backrank reverse-engineering](https://backrank.io/blog/how-chess-accuracy-works) · [Hindsight calibration](https://blog.almadih.dev/posts/building-hindsight-free-chess-game-review)
+
 ## Search depth and grade accuracy
 
 > **Grade-scale note.** The tables in this section were measured before the 3.8.1 grading change, when grades used Stockfish's WDL expected score and Blunder started at 20 points. Exact-grade counts are not comparable with the current Lichess-curve grades without rerunning the harness. The search-policy and node-count conclusions are unaffected.

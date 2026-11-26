@@ -3,9 +3,11 @@ import { COLOR, INPUT_EVENT_TYPE } from "./vendor/cm-chessboard/src/Chessboard.j
 import { MARKER_TYPE } from "./vendor/cm-chessboard/src/extensions/markers/Markers.js";
 import { createBoard, requestPromotion } from "./board-setup.js";
 import {
+  ACCURACY_MODEL_VERSION,
   CLASSIFICATIONS,
   StockfishEngine,
   computeACPL,
+  computeGameAccuracy,
   computeProGameAccuracy,
   formatEval,
   evalToWinWhite,
@@ -371,12 +373,14 @@ const dom = {
   accWhiteName: document.getElementById("accWhiteName"),
   accWhiteVal: document.getElementById("accWhiteVal"),
   accWhiteRing: document.getElementById("accWhiteRing"),
+  accuracyRefWhite: document.getElementById("accuracyRefWhite"),
   acplWhiteVal: document.getElementById("acplWhiteVal"),
   qualityWhiteVal: document.getElementById("qualityWhiteVal"),
   worstWhiteVal: document.getElementById("worstWhiteVal"),
   accBlackName: document.getElementById("accBlackName"),
   accBlackVal: document.getElementById("accBlackVal"),
   accBlackRing: document.getElementById("accBlackRing"),
+  accuracyRefBlack: document.getElementById("accuracyRefBlack"),
   acplBlackVal: document.getElementById("acplBlackVal"),
   qualityBlackVal: document.getElementById("qualityBlackVal"),
   worstBlackVal: document.getElementById("worstBlackVal"),
@@ -470,13 +474,25 @@ function updatePlayIcon(isPlaying) {
 function updateAccuracyRing(valEl, ringEl, value) {
   if (value === null || value === undefined || Number.isNaN(value)) {
     valEl.textContent = "--";
+    valEl.title = "Game accuracy (Chess.com-compatible CAPS2 calibration)";
     ringEl.style.strokeDashoffset = String(RING_CIRCUMFERENCE);
     return;
   }
   const clamped = Math.max(0, Math.min(100, value));
   valEl.textContent = `${clamped.toFixed(1)}%`;
+  valEl.title = `Game accuracy (Chess.com-compatible CAPS2 calibration) · ${clamped.toFixed(1)}%`;
   const offset = RING_CIRCUMFERENCE * (1 - clamped / 100);
   ringEl.style.strokeDashoffset = offset.toFixed(2);
+}
+
+/** The Lichess-style number and, when supplied by the Chess.com API, Chess.com's own score. */
+function setAccuracyDetails(element, lichess, chesscom) {
+  const parts = [];
+  if (Number.isFinite(lichess)) parts.push(`Lichess-style ${lichess.toFixed(1)}%`);
+  if (Number.isFinite(chesscom)) parts.push(`Chess.com ${chesscom.toFixed(1)}%`);
+  element.textContent = parts.join(" · ");
+  element.classList.toggle("hidden", parts.length === 0);
+  element.title = "Lichess-style game accuracy uses Lichess's volatility/harmonic blend. Chess.com is the Game Review score stored by Chess.com, when available.";
 }
 
 function switchTab(tabName) {
@@ -1040,6 +1056,8 @@ function loadGameFromPayload(payload) {
   dom.openingStudyName.textContent = opening;
   state.coachReplyPly = null;
   state.evals = new Array(positions.length).fill(null);
+  state.comparisons = new Array(positions.length).fill(null);
+  state.initialRoots = new Array(positions.length).fill(null);
   state.moveReviews = new Array(positions.length).fill(null);
   state.currentPly = 0;
   clearVariationState();
@@ -1138,7 +1156,7 @@ async function recordReviewedGame(runId, depth) {
     }
     const { initialFen, history } = state.positions.at(-1).searchOptions;
     const today = localDate();
-    const source = { positions: state.positions, evals: state.evals, moveReviews: state.moveReviews, playedColor };
+    const source = { positions: state.positions, evals: state.evals, initialRoots: state.initialRoots, moveReviews: state.moveReviews, playedColor };
     const decisions = userDecisions(source);
     const accuracy = gameAccuracy(source);
     const opponent = (playedColor === "w" ? meta.black : meta.white)?.username ?? "";
@@ -1154,7 +1172,7 @@ async function recordReviewedGame(runId, depth) {
 
     const summary = summarizeGame({
       gameKey,
-      reviewedAt: previous?.reviewedAt ?? Date.now(),
+      reviewedAt: previous?.accuracyVersion === ACCURACY_MODEL_VERSION ? previous.reviewedAt : Date.now(),
       date,
       color: playedColor,
       result,
@@ -1163,10 +1181,14 @@ async function recordReviewedGame(runId, depth) {
       depth,
       decisions,
       ...accuracy,
+      chesscomAccuracy: meta.accuracies ?? meta.chesscomAccuracy ?? null,
     });
     const game = { ...summary, gameId, pgn, timeControl, endTime };
     renderPersonalPerformance(comparePersonalPerformance({ current: game, history: [...data.games.values()] }));
-    if (previous && previous.color === playedColor && previous.depth > depth) return;
+    // Old summaries use the previous accuracy scale; allow a re-review to replace them even at a
+    // lower depth. A current-version deeper review still wins.
+    if (previous && previous.color === playedColor && previous.depth > depth &&
+        previous.accuracyVersion === ACCURACY_MODEL_VERSION) return;
     const existing = [...data.puzzles.values()].filter((puzzle) => puzzle.gameKey === gameKey);
     const { puzzles, removedIds } = puzzlesFromDecisions({
       gameKey, color: playedColor, opponent, gameDate: date, decisions, today, existing,
@@ -1269,10 +1291,11 @@ async function runFullAnalysis() {
     const prevOpponentWinLoss = state.moveReviews[ply - 1]?.winLoss ?? 0;
     const { root } = comparison;
     const review = scoreDecision(before, pos, comparison, prevOpponentWinLoss);
+    const book = bookForReview(pos.terminal ? null : state.bookMoves[ply], review);
     state.moveReviews[ply] = {
       ...review,
       provisional: state.pendingPlies.has(ply),
-      book: bookForReview(pos.terminal ? null : state.bookMoves[ply], review),
+      book,
       peerDifficulty: peerDecisionPrediction(before, state.initialRoots[ply - 1], pos.move.color),
       coachReply: coachEvidence(pos, review),
       tactics: reviewTactics({
@@ -1697,8 +1720,11 @@ function renderCoachCard(ply) {
   const evalAfterStr = formatEval(review.playedEval);
   dom.evalDeltaText.textContent = `Best ${evalBeforeStr} · played ${evalAfterStr} · ${review.cpLoss} cp lost`;
   dom.engineLossText.textContent = `Engine expected-score loss ${review.winLoss.toFixed(1)} pts`;
-  dom.engineLossText.title = `Stockfish depth ${review.depth}. Expected-score loss uses engine self-play on a 0–100 scale. This loss drives the move grade.`;
+  dom.engineLossText.title = `Stockfish depth ${review.depth}. Expected-score loss uses the Lichess win-probability curve. This loss drives the move grade and move accuracy; game accuracy uses a Chess.com-compatible calibration.`;
   dom.moveAccuracyPill.textContent = review.forced ? "Only legal move" : `Move: ${review.accuracy.toFixed(0)}%`;
+  dom.moveAccuracyPill.title = review.forced
+    ? "The only legal move scores 100%."
+    : "Lichess-style move accuracy. Game accuracy uses a Chess.com-compatible calibration.";
   dom.evalDeltaStrip.classList.remove("hidden");
   const impact = review.practicalImpact;
   const showImpact = impact && impact.loss >= 0.5;
@@ -1926,9 +1952,15 @@ function renderPersonalPerformance(comparison) {
 }
 
 function updateScoreboard() {
-  const winTimeline = state.evals.map((e) => e ? evalToWinWhite(e.eval) : null);
+  // Use the uniform quick-pass roots for the Lichess-style comparison. state.evals can contain
+  // deeper re-search roots, which would add artificial volatility; game accuracy itself no longer
+  // depends on this timeline.
+  const timelineSource = state.initialRoots.some(Boolean) ? state.initialRoots : state.evals;
+  const winTimeline = timelineSource.map((e) => e ? evalToWinWhite(e.eval) : null);
   const whiteMoves = [];
   const blackMoves = [];
+  const whiteGameMoves = [];
+  const blackGameMoves = [];
   const whiteCpLosses = [];
   const blackCpLosses = [];
   const reviewsByColor = { w: [], b: [] };
@@ -1944,6 +1976,9 @@ function updateScoreboard() {
     if (!rev || !move) continue;
     reviewsByColor[move.color].push(rev);
     counts[move.color][displayClassification(rev).key]++;
+    const gameMove = { winLoss: rev.winLoss, book: rev.book, forced: rev.forced };
+    if (move.color === "w") whiteGameMoves.push(gameMove);
+    else blackGameMoves.push(gameMove);
     if (rev.forced) continue;
     if (move.color === "w") {
       whiteMoves.push({ ply: i, accuracy: rev.accuracy });
@@ -1954,13 +1989,19 @@ function updateScoreboard() {
     }
   }
 
-  const whiteAcc = computeProGameAccuracy(winTimeline, whiteMoves);
-  const blackAcc = computeProGameAccuracy(winTimeline, blackMoves);
+  const whiteAcc = computeGameAccuracy(whiteGameMoves);
+  const blackAcc = computeGameAccuracy(blackGameMoves);
+  // Keep the Lichess-style number available for comparison and for users with older expectations.
+  const whiteLichess = computeProGameAccuracy(winTimeline, whiteMoves);
+  const blackLichess = computeProGameAccuracy(winTimeline, blackMoves);
   const whiteAcpl = computeACPL(whiteCpLosses);
   const blackAcpl = computeACPL(blackCpLosses);
 
   updateAccuracyRing(dom.accWhiteVal, dom.accWhiteRing, whiteAcc);
   updateAccuracyRing(dom.accBlackVal, dom.accBlackRing, blackAcc);
+  const reference = state.gameMeta?.accuracies ?? state.gameMeta?.chesscomAccuracy;
+  setAccuracyDetails(dom.accuracyRefWhite, whiteLichess, reference?.white);
+  setAccuracyDetails(dom.accuracyRefBlack, blackLichess, reference?.black);
   dom.acplWhiteVal.textContent = whiteAcpl !== null ? `${whiteAcpl} ACPL` : "-- ACPL";
   dom.acplBlackVal.textContent = blackAcpl !== null ? `${blackAcpl} ACPL` : "-- ACPL";
 
@@ -3420,6 +3461,7 @@ async function bootstrap() {
         const res = loadGameFromPayload({
           gameId: record.gameId, pgn: record.pgn, playedColor: record.color, colorConfirmed: true,
           timeClass: record.timeClass, timeControl: record.timeControl, endTime: record.endTime,
+          accuracies: record.chesscomAccuracy ?? null,
         });
         if (res.ok) {
           const ply = Number(params.get("ply"));
