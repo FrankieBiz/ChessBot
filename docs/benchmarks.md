@@ -189,6 +189,8 @@ python3 scripts/benchmark-game-rating.py --train 2026-02.pgn.zst \
 
 ## Search depth and grade accuracy
 
+> **Grade-scale note.** The tables in this section were measured before the 3.8.1 grading change, when grades used Stockfish's WDL expected score and Blunder started at 20 points. Exact-grade counts are not comparable with the current Lichess-curve grades without rerunning the harness. The search-policy and node-count conclusions are unaffected.
+
 ### Deeper-search benchmark
 
 The benchmark sampled 72 isolated decisions from the October 2026 Lichess archive. Both releases started at the normal depth-16 target. The reference used full Stockfish 19 at uncapped depth 22, with a broad three-move search and the played move included in the matched comparison. The harness cleared the search table between independent positions.

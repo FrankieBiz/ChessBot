@@ -149,6 +149,8 @@ ChessBot's grading rules and models are tested against deeper searches and held-
 | Same forecast on held-out Chess.com games | 0.1246, down from 0.1421 in v3.3 |
 | Clock-aware expected-score model versus the published Lichess curve | 5.8% lower squared error |
 
+The grade-agreement row was measured on the 3.8.0 grade scale. ChessBot 3.8.1 grades on the Lichess win-probability curve; see the note in [docs/benchmarks.md](docs/benchmarks.md#search-depth-and-grade-accuracy) before comparing exact-grade counts.
+
 [How ChessBot works](docs/methodology.md) explains the grading, search, and difficulty models in detail.
 
 ## Privacy

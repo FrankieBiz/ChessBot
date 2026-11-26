@@ -44,7 +44,7 @@ import { confirmedSide, gameAccuracy, gameDate, pgnSideFor, summarizeGame, userD
 import { gameKeyFor, loadTraining, saveReview, webStorageArea } from "./training-store.js";
 import { describeVariation, moveToUci, parseUciMove, replayVariation } from "./variation.js";
 import {
-  HUMAN_MOVE_SEARCH_DEPTH, candidateScores, forecastHumanMoves, humanContext, moveFeatureRows,
+  HUMAN_MOVE_SEARCH_DEPTH, candidateCpScores, candidateScores, forecastHumanMoves, humanContext, moveFeatureRows,
 } from "./human-move-model.js";
 import { HUMAN_MOVE_MODEL } from "./human-move-data.js";
 import { STOCKFISH_WORKER_PATH } from "./vendor/stockfish/engine-config.js";
@@ -202,6 +202,7 @@ const state = {
 
   coachCache: new Map(),
   humanForecasts: new Map(),
+  humanForecastTried: new Set(),
   humanForecastBusy: false,
   humanForecastNext: null,
   aiSettings: {
@@ -1011,6 +1012,14 @@ function loadGameFromPayload(payload) {
   const result = headers.Result || "*";
   const bookMoves = findBookMoves(positions);
   const opening = extractOpeningName(headers) || bookMoves.findLast((match) => match?.name)?.name || "";
+  // Trust the signed-in account or saved username over the page's bottom player when choosing a side.
+  const knownSide = confirmedSide({
+    colorConfirmed: payload.colorConfirmed,
+    playedColor: payload.playedColor,
+    accountUsername: payload.accountUsername,
+    white: { username: whiteName },
+    black: { username: blackName },
+  }, dom.fallbackUsernameInput.value);
 
   state.gameMeta = {
     ...payload,
@@ -1018,7 +1027,7 @@ function loadGameFromPayload(payload) {
     opening,
     white: { username: whiteName, ...recordedRating(payload.white?.rating, headers.WhiteElo), result: payload.white?.result || "" },
     black: { username: blackName, ...recordedRating(payload.black?.rating, headers.BlackElo), result: payload.black?.result || "" },
-    playedColor: payload.playedColor || positions[1].move.color,
+    playedColor: knownSide || payload.playedColor || positions[1].move.color,
   };
 
   state.positions = positions;
@@ -1037,6 +1046,7 @@ function loadGameFromPayload(payload) {
   resetDrillProgress();
   state.coachCache.clear();
   state.humanForecasts.clear();
+  state.humanForecastTried.clear();
   state.shapes.clear();
   state.variationEval = null;
   lineRegistry.clear();
@@ -1188,6 +1198,7 @@ async function runFullAnalysis() {
   state.moveReviews.fill(null);
   state.coachCache.clear();
   state.humanForecasts.clear();
+  state.humanForecastTried.clear();
   switchTab("review");
   resetDrillProgress();
   updateScoreboard();
@@ -1446,7 +1457,9 @@ dom.guidedNextBtn.addEventListener("click", () => {
 });
 
 function updateEvalBarFromData(evalData) {
-  const winWhite = evalData ? evalData.winWhite : 50;
+  // The bar, chart, grades, and accuracy share the Lichess win-probability curve. The tooltip keeps
+  // Stockfish's WDL estimate, which is a different calibration.
+  const winWhite = evalData?.eval ? evalToWinWhite(evalData.eval) : 50;
   const label = evalData ? formatEval(evalData.eval) : "0.0";
 
   dom.evalBar.classList.toggle("flipped", state.orientation === "b");
@@ -1455,7 +1468,7 @@ function updateEvalBarFromData(evalData) {
   const wdl = evalData?.wdl;
   dom.evalBar.title = wdl
     ? `White · win ${wdl.win / 10}% · draw ${wdl.draw / 10}% · loss ${wdl.loss / 10}%`
-    : "Stockfish expected score";
+    : "White win probability on the Lichess curve";
 
   const whiteAdvantage = winWhite >= 50;
   const whiteAtBottom = state.orientation === "w";
@@ -1753,7 +1766,7 @@ function renderDifficulty(ply, review) {
     if (tempting && tempting.probability >= 0.08) {
       // For the game move, quote the review's deeper loss so the card shows one figure for it.
       const played = tempting.uci === state.positions[ply].move.uci;
-      const loss = played ? review.winLoss : tempting.loss;
+      const loss = played ? review.winLoss : (Number.isFinite(tempting.cpLoss) ? tempting.cpLoss : tempting.loss);
       dom.temptingMoveText.textContent = `Most tempting mistake: ${tempting.san}${played ? ", the game move" : ""} ` +
         `(≈${Math.round(tempting.probability * 100)}% of players, −${loss.toFixed(0)} pts)`;
       dom.temptingMoveText.title = "The unsound move the human-choice model rates most likely, with its expected-score loss";
@@ -1771,6 +1784,7 @@ function renderDifficulty(ply, review) {
 /** Search every legal move once the review is idle, then forecast which moves a human would choose. */
 async function requestHumanForecast(ply) {
   if (!HUMAN_MOVE_MODEL || !engine?.ready || state.isAnalyzing || ply < 1 || state.humanForecasts.has(ply)) return;
+  if (state.humanForecastTried.has(ply)) return;
   if (state.humanForecastBusy) {
     state.humanForecastNext = ply;
     return;
@@ -1778,6 +1792,8 @@ async function requestHumanForecast(ply) {
   const before = state.positions[ply - 1];
   const after = state.positions[ply];
   if (!before || !after?.move || before.terminal || before.legalMoves < 2) return;
+  // Do not repeat a heavy all-moves search when it could not return every legal move.
+  state.humanForecastTried.add(ply);
   state.humanForecastBusy = true;
   const runId = state.analysisRunId;
   try {
@@ -1794,7 +1810,8 @@ async function requestHumanForecast(ply) {
       rating: before.lichessRatings?.[color] ?? null,
       clockSeconds: clocks ? (color === "w" ? clocks.whiteSeconds : clocks.blackSeconds) : null,
     });
-    const rows = moveFeatureRows(replayVariation(before), candidateScores(search, color), context, before.move?.to ?? null);
+    const rows = moveFeatureRows(replayVariation(before), candidateScores(search, color), context, before.move?.to ?? null,
+      candidateCpScores(search, color));
     const forecast = forecastHumanMoves(rows, context);
     if (!forecast) return;
     state.humanForecasts.set(ply, forecast);
@@ -2162,7 +2179,8 @@ function highlightActiveMoveInList(ply) {
     const isActive = Number(cell.dataset.ply) === ply;
     cell.classList.toggle("active", isActive);
     if (isActive && state.activeTab === "moves") {
-      cell.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+      cell.scrollIntoView({ block: "nearest", behavior: reduceMotion ? "auto" : "smooth" });
     }
   });
 }
@@ -2510,6 +2528,18 @@ async function evaluateDrillAttempt(moveObj, attemptedUci, deliversMate, stillCu
   }
   if (!stillCurrent()) return;
 
+  if (judgement.verdict === "unknown") {
+    dom.drillPromptText.className = "drill-prompt";
+    dom.drillPromptText.textContent = `Couldn't check ${moveObj.san} with Stockfish. Try another move.`;
+    setTimeout(() => {
+      if (stillCurrent()) {
+        showPosition(beforePos.fen, true);
+        state.drillChecking = false;
+      }
+    }, 420);
+    return;
+  }
+
   if (judgement.verdict === "best" || judgement.verdict === "alternative") {
     playSound("success");
     const message = drillSuccess({ attemptSan: moveObj.san, judgement, review, deliversMate });
@@ -2703,6 +2733,7 @@ dom.aiEndpointInput.addEventListener("change", clearKeyOnEndpointChange);
 dom.saveSettingsBtn.addEventListener("click", async () => {
   state.coachCache.clear();
   state.humanForecasts.clear();
+  state.humanForecastTried.clear();
   dom.aiCoachOutput.classList.add("hidden");
   state.aiSettings = {
     preset: dom.aiPresetSelect.value,

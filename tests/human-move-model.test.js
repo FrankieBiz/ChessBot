@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { parseReviewGame } from '../analysis.js';
 import { summarizeLines } from '../engine.js';
 import {
-  HUMAN_MOVE_FEATURES, HUMAN_MOVE_SEARCH_DEPTH, RATING_FEATURES, SOUND_MOVE_LOSS, candidateScores, forecastHumanMoves, humanContext, moveFeatureRows,
+  HUMAN_MOVE_FEATURES, HUMAN_MOVE_SEARCH_DEPTH, RATING_FEATURES, SOUND_MOVE_LOSS, candidateCpScores, candidateScores, forecastHumanMoves, humanContext, moveFeatureRows,
 } from '../human-move-model.js';
 import { replayVariation } from '../variation.js';
 
@@ -48,6 +48,17 @@ test('the context only uses ratings and clocks inside the supported range', () =
   assert.equal(humanContext({ clockSeconds: null }).pressure, 0);
   const rows = moveFeatureRows(game, candidateScores(searchFor({}), 'w'), humanContext(), before.move.to);
   for (const name of RATING_FEATURES) assert.ok(rows.every((row) => feature(row, name) === 0));
+});
+
+test('a tempting move can show its loss on the graded Lichess curve', () => {
+  const cpSearch = summarizeLines(legal.map((uci) => ({
+    pv: [uci], winWhite: 50, eval: { type: 'cp', value: uci === 'e4d5' ? 100 : 0 }, depth: 12,
+  })).sort((a, b) => b.winWhite - a.winWhite), 'w');
+  const rows = moveFeatureRows(game, candidateScores(cpSearch, 'w'), humanContext(), before.move.to,
+    candidateCpScores(cpSearch, 'w'));
+  assert.equal(rows.find(({ uci }) => uci === 'e4d5').cpLoss, 0);
+  assert.ok(rows.find(({ uci }) => uci === 'a2a3').cpLoss > 9);
+  assert.ok(rows.every(({ cpLoss }) => Number.isFinite(cpLoss) && cpLoss >= 0));
 });
 
 test('the forecast normalizes move probabilities and names the likeliest unsound move', () => {

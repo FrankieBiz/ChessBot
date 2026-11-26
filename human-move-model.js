@@ -4,13 +4,14 @@
 // The same feature code runs in the browser and in scripts/collect-human-moves.mjs, which builds
 // the training rows, so the fitted coefficients always see the features they were trained on.
 import { HUMAN_MOVE_MODEL } from "./human-move-data.js";
+import { evalToWinWhite } from "./engine.js";
 
 /**
  * All-moves search depth. The engine's node budget for this depth is about 0.36 million nodes.
  * Depth 12 rated some traps, such as 4. Nxe5 in the Blackburne–Shilling line, as the best move.
  */
 export const HUMAN_MOVE_SEARCH_DEPTH = 14;
-/** A move is sound when it loses at most this many expected-score points, the Good grade boundary. */
+/** A move is sound when it loses at most this many points on the model's WDL-calibrated loss scale. */
 export const SOUND_MOVE_LOSS = 5;
 
 const VALUES = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 };
@@ -31,6 +32,17 @@ export function candidateScores(search, color) {
   for (const line of search?.lines ?? []) {
     if (!line?.pv?.[0] || !Number.isFinite(line.winWhite)) continue;
     scores.set(line.pv[0], color === "w" ? line.winWhite : 100 - line.winWhite);
+  }
+  return scores;
+}
+
+/** Mover expected score on the graded Lichess curve, for showing a tempting move's loss on the same scale. */
+export function candidateCpScores(search, color) {
+  const scores = new Map();
+  for (const line of search?.lines ?? []) {
+    if (!line?.pv?.[0] || !line.eval) continue;
+    const white = evalToWinWhite(line.eval);
+    scores.set(line.pv[0], color === "w" ? white : 100 - white);
   }
   return scores;
 }
@@ -60,9 +72,10 @@ function cheapestAttacker(game, square, color) {
 
 /**
  * One feature row per legal move. `game` is a chess.js position (it is restored before returning),
- * `scores` comes from candidateScores, and `lastMoveTo` is the square of the opponent's last move.
+ * `scores` comes from candidateScores, `lastMoveTo` is the square of the opponent's last move, and
+ * `cpScores` optionally supplies the same moves on the graded Lichess curve for display.
  */
-export function moveFeatureRows(game, scores, context, lastMoveTo = null) {
+export function moveFeatureRows(game, scores, context, lastMoveTo = null, cpScores = null) {
   const color = game.turn();
   const opponent = color === "w" ? "b" : "w";
   const forward = color === "w" ? 1 : -1;
@@ -71,11 +84,19 @@ export function moveFeatureRows(game, scores, context, lastMoveTo = null) {
   if (!known.length) return [];
   const best = Math.max(...known);
   const worst = Math.min(...known);
+  const knownCp = cpScores
+    ? legal.map((move) => cpScores.get(move.lan)).filter(Number.isFinite)
+    : [];
+  const bestCp = knownCp.length ? Math.max(...knownCp) : null;
   const { rating, pressure } = context;
 
   return legal.map((move) => {
     const score = scores.get(move.lan) ?? worst;
     const loss = clamp(best - score, 0, 100);
+    const cpScore = cpScores?.get(move.lan);
+    const cpLoss = Number.isFinite(cpScore) && Number.isFinite(bestCp)
+      ? clamp(bestCp - cpScore, 0, 100)
+      : null;
     const piece = move.piece;
     const capture = Boolean(move.captured);
     const check = move.san.includes("+") || move.san.includes("#");
@@ -118,7 +139,7 @@ export function moveFeatureRows(game, scores, context, lastMoveTo = null) {
       captureRating: Number(capture) * rating,
       checkRating: Number(check) * rating,
     };
-    return { uci: move.lan, san: move.san, loss, features: HUMAN_MOVE_FEATURES.map((name) => row[name]) };
+    return { uci: move.lan, san: move.san, loss, cpLoss, features: HUMAN_MOVE_FEATURES.map((name) => row[name]) };
   });
 }
 
@@ -127,8 +148,9 @@ const sigmoid = (x) => 1 / (1 + Math.exp(-x));
 
 /**
  * Move probabilities and their consequences.
- * soundChance is the calibrated chance of a move within SOUND_MOVE_LOSS, and tempting is the
- * likeliest unsound move.
+ * soundChance is the calibrated chance of a move within SOUND_MOVE_LOSS on the model's WDL scale.
+ * tempting is the likeliest move outside the displayed Good boundary (or the WDL boundary when the
+ * caller did not supply cpScores).
  */
 export function forecastHumanMoves(rows, { ratingKnown }, model = HUMAN_MOVE_MODEL) {
   // Coefficients trained on other features or another search depth would misread the inputs.
@@ -140,16 +162,17 @@ export function forecastHumanMoves(rows, { ratingKnown }, model = HUMAN_MOVE_MOD
   const top = Math.max(...logits);
   const exps = logits.map((value) => Math.exp(value - top));
   const total = exps.reduce((sum, value) => sum + value, 0);
-  const moves = rows.map((row, index) => ({ uci: row.uci, san: row.san, loss: row.loss, probability: exps[index] / total }))
+  const moves = rows.map((row, index) => ({ uci: row.uci, san: row.san, loss: row.loss, cpLoss: row.cpLoss, probability: exps[index] / total }))
     .sort((a, b) => b.probability - a.probability);
   const rawSound = clamp(moves.reduce((sum, move) => sum + (move.loss <= SOUND_MOVE_LOSS ? move.probability : 0), 0),
     1e-4, 1 - 1e-4);
   const [intercept, slope] = calibration;
+  const unsound = (move) => Number.isFinite(move.cpLoss) ? move.cpLoss > SOUND_MOVE_LOSS : move.loss > SOUND_MOVE_LOSS;
   return {
     variant,
     moves,
     soundChance: 100 * sigmoid(intercept + slope * logit(rawSound)),
     expectedLoss: moves.reduce((sum, move) => sum + move.probability * move.loss, 0),
-    tempting: moves.find((move) => move.loss > SOUND_MOVE_LOSS) ?? null,
+    tempting: moves.find(unsound) ?? null,
   };
 }

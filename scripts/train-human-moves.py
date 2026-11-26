@@ -236,7 +236,7 @@ def main():
 
     hashes = {name: hashlib.sha256(split.path.read_bytes()).hexdigest() for name, split in splits.items()}
     report = {
-        "target": "Played move loses at most five expected-score points in the extension's depth-16 comparison",
+        "target": "Played move loses at most five points on the human-choice model's WDL-calibrated loss scale at depth 16",
         "searchDepth": search_depth, "features": FEATURES, "l2": choice, "samples": hashes,
         "moves": moves, "findRate": find_rate,
         "weights": {family: weights.tolist() for family, weights in fitted.items()},

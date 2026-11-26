@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { classifyMove, computeProGameAccuracy, parseUciInfoLine, StockfishEngine } from '../engine.js';
+import { classifyMove, computeProGameAccuracy, formatEval, parseUciInfoLine, StockfishEngine } from '../engine.js';
 
 const move = {
   playedUci: 'e2e4', bestMoveUci: 'e2e4', winBefore: 61, winAfter: 61,
@@ -30,17 +30,30 @@ test('a missed opportunity is a Miss at the Mistake boundary', () => {
   assert.equal(classifyMove({ ...move, playedUci: 'a2a3', winBefore: 75, winAfter: 55, prevOpponentWinLoss: 28 }).key, 'miss');
 });
 
-test('a loss beyond the Mistake boundary is a Blunder after an opponent error', () => {
+test('a loss past the Blunder boundary is a Blunder after an opponent error', () => {
   const missedOpportunity = { ...move, playedUci: 'a2a3', winBefore: 75, prevOpponentWinLoss: 28 };
-  assert.equal(classifyMove({ ...missedOpportunity, winAfter: 54.9 }).key, 'blunder');
+  // Lichess grades a 20–30 point loss as a Mistake and only 30+ as a Blunder.
+  assert.equal(classifyMove({ ...missedOpportunity, winAfter: 54.9 }).key, 'mistake');
+  assert.equal(classifyMove({ ...missedOpportunity, winAfter: 44.9 }).key, 'blunder');
   assert.equal(classifyMove({ ...missedOpportunity, winAfter: 35 }).key, 'blunder');
 });
 
-test('a WDL loss on a grade boundary stays in that grade', () => {
+test('a loss on a grade boundary stays in that grade', () => {
   for (const [winAfter, key] of [[61.15, 'excellent'], [59.15, 'good'], [54.15, 'inaccuracy']]) {
     assert.equal(classifyMove({ ...move, playedUci: 'a2a3', winBefore: 64.15, winAfter }).key, key);
   }
   assert.equal(classifyMove({ ...move, playedUci: 'a2a3', winBefore: 50.2, winAfter: 30.2 }).key, 'mistake');
+  assert.equal(classifyMove({ ...move, playedUci: 'a2a3', winBefore: 50.2, winAfter: 20.2 }).key, 'mistake');
+  assert.equal(classifyMove({ ...move, playedUci: 'a2a3', winBefore: 50.2, winAfter: 19.9 }).key, 'blunder');
+});
+
+test('eval labels round tiny values to zero without a signed zero', () => {
+  assert.equal(formatEval({ type: 'cp', value: -4 }), '0.0');
+  assert.equal(formatEval({ type: 'cp', value: 4 }), '0.0');
+  assert.equal(formatEval({ type: 'cp', value: -5 }), '-0.1');
+  assert.equal(formatEval({ type: 'cp', value: 5 }), '+0.1');
+  assert.equal(formatEval({ type: 'cp', value: -120 }), '-1.2');
+  assert.equal(formatEval({ type: 'mate', value: -3 }), '-M3');
 });
 
 test('volatility uses full opening windows and a zero counts as 1% in the harmonic mean', () => {

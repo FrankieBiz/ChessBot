@@ -120,7 +120,7 @@ await Promise.all(Array.from({ length: workers }, async () => {
         if (rated?.model !== "lichessRating") continue;
         const comparison = await analyzeDecision(engine, before, after, 16, initial);
         const review = scoreDecision(before, after, comparison, 0);
-        const loss = review.winLoss;
+        const loss = Number.isFinite(review.modelWinLoss) ? review.modelWinLoss : review.winLoss;
         results[index] = { id: row.id, timeClass: row.timeClass, rating: row.rating,
           color: row.color, ply: before.ply, target: { sound: loss <= 5, winLoss: loss }, cohort: { rated },
           depth: review.depth, confidence: review.searchConfidence };

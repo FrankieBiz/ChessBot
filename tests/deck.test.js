@@ -254,5 +254,5 @@ test("a saved puzzle compares a move from its stored lines without Stockfish", a
     attemptUci: "f1c4", gameUci: "a2a3", review: puzzleReview(p), color: "w", comparison,
   });
   assert.equal(verdict.verdict, "alternative");
-  assert.equal(verdict.loss, 1);
+  assert.equal(verdict.loss, 0);
 });

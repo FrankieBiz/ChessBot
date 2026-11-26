@@ -131,7 +131,7 @@ test("a capture later in the line is not blamed on the move unless it is a blund
     bestPv: ["g8g7"], color: "b", phase: "endgame", winLoss: 8 });
   assert.equal(quiet.consequence, null);
   const blunder = explainError({ ...input, fenAfter: "8/5k2/8/4p3/8/8/3B4/K7 w - - 1 2", playedUci: "g8f7", playedPv: line,
-    bestPv: ["g8g7"], color: "b", phase: "endgame", winLoss: 30 });
+    bestPv: ["g8g7"], color: "b", phase: "endgame", winLoss: 31 });
   assert.equal(blunder.consequence.later, true);
   assert.match(describeError(blunder, { san: "Kf7", bestSan: "Kg7", color: "b" }).text,
     /^Further along Stockfish's line, White wins a pawn: after Bc3 Ke6 Kb2 Kd5 Kc2 Ke4, Bxe5 takes the pawn on e5/);

@@ -2,6 +2,7 @@
 // A reason says what the move allows, what the better move does, or what the move changes
 // in the position. Nothing here guesses at plans; every sentence states a verifiable fact.
 import { Chess } from "./vendor/chess.js/chess.js";
+import { GRADE_LOSS_LIMITS } from "./engine.js";
 import { parseUciMove } from "./variation.js";
 
 const VALUE = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 };
@@ -12,7 +13,7 @@ const WINDOW = 6;
 // A longer look along the line, used when the short window shows nothing.
 const LONG_WINDOW = 12;
 // Losses this large are blunders; their explanation must come from the line, not a side detail.
-const BLUNDER_LOSS = 20;
+const BLUNDER_LOSS = GRADE_LOSS_LIMITS.blunder;
 const HOME_SQUARES = { w: ["b1", "g1", "c1", "f1"], b: ["b8", "g8", "c8", "f8"] };
 const CENTER = new Set(["d4", "e4", "d5", "e5"]);
 const other = (color) => (color === "w" ? "b" : "w");
@@ -299,7 +300,7 @@ export function explainError({
   if (!fenBefore || !fenAfter || playedPv[0] !== playedUci || (color !== "w" && color !== "b")) return null;
   const context = { fenEarlier, fenBefore, fenAfter, previousUci, previousCaptured, playedUci, playedPv, bestPv, color, phase };
   const bestDiffers = bestPv[0] && bestPv[0] !== playedUci;
-  const blunder = winLoss >= BLUNDER_LOSS;
+  const blunder = winLoss > BLUNDER_LOSS;
   return {
     blunder,
     consequence: materialLoss(context) ?? kingPressure(context) ?? runningPawn(context) ??
