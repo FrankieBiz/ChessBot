@@ -189,7 +189,7 @@ python3 scripts/benchmark-game-rating.py --train 2026-02.pgn.zst \
 
 ## Search depth and grade accuracy
 
-> **Grade-scale note.** The tables in this section were measured before the Unreleased grading change, when grades used Stockfish's WDL expected score and Blunder started at 20 points. Exact-grade counts are not comparable with the current Lichess-curve grades without rerunning the harness. The search-policy and node-count conclusions are unaffected.
+> **Grade-scale note.** The tables in this section were measured before the 3.8.1 grading change, when grades used Stockfish's WDL expected score and Blunder started at 20 points. Exact-grade counts are not comparable with the current Lichess-curve grades without rerunning the harness. The search-policy and node-count conclusions are unaffected.
 
 ### Deeper-search benchmark
 

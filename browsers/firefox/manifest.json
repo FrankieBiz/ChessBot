@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "ChessBot: Local Game Review",
-  "version": "3.8.0",
+  "version": "3.8.1",
   "description": "Private, offline Stockfish 19 game review with move grades, named tactics and spaced practice. Works with Chess.com games and PGNs.",
   "icons": {
     "48": "icons/icon-48.png",
