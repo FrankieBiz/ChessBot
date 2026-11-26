@@ -1,4 +1,5 @@
 import { difficultyFeatures, readLichessRatings } from "./difficulty-model.js";
+import { ACCURACY_MODEL_VERSION } from "./engine.js";
 import { PEER_PERFORMANCE } from "./performance-data.js";
 
 const MIN_DECISIONS = 12;
@@ -60,6 +61,7 @@ function playedAt(game) {
 
 function personalProfile(game) {
   if (!game?.gameKey || (game.color !== "w" && game.color !== "b") ||
+      game.accuracyVersion !== ACCURACY_MODEL_VERSION ||
       !Number.isInteger(game.depth) || game.depth < 1 || !Number.isInteger(game.decisions) || game.decisions < MIN_DECISIONS ||
       !Number.isFinite(game.accuracy) || game.accuracy < 0 || game.accuracy > 100) return null;
 

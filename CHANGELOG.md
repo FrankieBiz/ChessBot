@@ -4,6 +4,16 @@ All notable changes to ChessBot are recorded here. The format follows [Keep a Ch
 
 ## [Unreleased]
 
+### Changed
+
+- **Game accuracy now follows Chess.com's CAPS2 scale instead of Lichess's game blend.** The old Lichess-style score used a volatility-weighted mean plus a harmonic mean; one blunder among many good moves could pull a game 15–25 points below Chess.com. Game accuracy now uses a calibrated Chess.com-compatible move curve and power mean, scores forced moves and sound book matches as 100, and is fitted to public Chess.com `accuracies` labels. The Lichess-style value and Chess.com's own Game Review score appear under each ring when available. Saved games store an accuracy-model version; older summaries are excluded from accuracy averages and personal medians until re-reviewed.
+- Phase accuracy now uses the same Chess.com-compatible move scores and phase-local move sets, so the phase bars and weakness report no longer reuse the full-game harmonic window.
+- Chess.com games keep the `accuracies` values from the public API and show them beside ChessBot's score.
+
+### Fixed
+
+- The move-card tooltip still described the old engine-self-play loss after the 3.8.1 Lichess-curve change; it now describes the Lichess win-probability loss and the separate game-accuracy calibration.
+
 ## [3.8.1] - 2026-11-25
 
 ### Fixed

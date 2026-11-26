@@ -2,7 +2,7 @@
 import { Chess } from "./vendor/chess.js/chess.js";
 import { computeGameInsights, generateLocalCoachInsight } from "./coach.js";
 import { PUZZLE_GRADES, localDate } from "./deck.js";
-import { computeProGameAccuracy, evalToWinWhite } from "./engine.js";
+import { ACCURACY_MODEL_VERSION, computeGameAccuracy, computeProGameAccuracy, evalToWinWhite } from "./engine.js";
 
 /** The report appears once this many games are reviewed. */
 export const REPORT_MIN_GAMES = 5;
@@ -110,24 +110,31 @@ export function userDecisions({ positions, evals, moveReviews, playedColor }) {
 }
 
 /** Overall and phase accuracy for the user's side, computed the way the review page shows them. */
-export function gameAccuracy({ positions, evals, moveReviews, playedColor }) {
-  const winTimeline = evals.map((evaluation) => (evaluation ? evalToWinWhite(evaluation.eval) : null));
+export function gameAccuracy({ positions, evals, initialRoots, moveReviews, playedColor }) {
+  // Prefer the uniform quick-pass roots for the Lichess-style reference; deeper comparison roots
+  // would otherwise add artificial volatility. The Chess.com-compatible score does not use them.
+  const timelineSource = initialRoots?.some(Boolean) ? initialRoots : evals;
+  const winTimeline = timelineSource.map((evaluation) => (evaluation ? evalToWinWhite(evaluation.eval) : null));
   const moves = [];
+  const lichessMoves = [];
   for (let ply = 1; ply < positions.length; ply++) {
     const review = moveReviews[ply];
-    if (review && !review.forced && positions[ply].move?.color === playedColor) {
-      moves.push({ ply, accuracy: review.accuracy });
+    if (review && positions[ply].move?.color === playedColor) {
+      moves.push({ winLoss: review.winLoss, book: review.book, forced: review.forced });
+      if (!review.forced) lichessMoves.push({ ply, accuracy: review.accuracy });
     }
   }
   return {
-    accuracy: computeProGameAccuracy(winTimeline, moves),
+    accuracy: computeGameAccuracy(moves),
+    lichessAccuracy: computeProGameAccuracy(winTimeline, lichessMoves),
     phaseAccuracy: computeGameInsights({ positions, winTimeline, moveReviews, playedColor }),
+    accuracyVersion: ACCURACY_MODEL_VERSION,
   };
 }
 
 /** The stored summary of one reviewed game. */
 export function summarizeGame({ gameKey, reviewedAt, date, color, result, timeClass, opponent, depth, decisions,
-  accuracy, phaseAccuracy }) {
+  accuracy, phaseAccuracy, accuracyVersion = ACCURACY_MODEL_VERSION, lichessAccuracy = null, chesscomAccuracy = null }) {
   const lowDecisions = decisions.filter((d) => d.lowClock === true).length;
   const otherDecisions = decisions.filter((d) => d.lowClock === false).length;
   const scores = decisions.map((d) => d.expectedBefore).filter(Number.isFinite);
@@ -140,6 +147,9 @@ export function summarizeGame({ gameKey, reviewedAt, date, color, result, timeCl
     phaseMoves: Object.fromEntries(PHASES.map((phase) => [phase, decisions.filter((d) => d.phase === phase).length])),
     phaseAccuracy: Object.fromEntries(PHASES.map((phase) => [phase, phaseAccuracy?.[phase] ?? null])),
     accuracy: accuracy ?? null,
+    lichessAccuracy: lichessAccuracy ?? null,
+    chesscomAccuracy: chesscomAccuracy ?? null,
+    accuracyVersion,
     clock: lowDecisions + otherDecisions ? { lowDecisions, otherDecisions } : null,
     maxExpectedScore: scores.length ? Math.max(...scores) : null,
     mistakes: decisions.filter((d) => d.theme)
@@ -166,8 +176,8 @@ export function weaknessReport(summaries) {
   const games = [...summaries].sort((a, b) => b.reviewedAt - a.reviewedAt).slice(0, REPORT_WINDOW);
   if (games.length < REPORT_MIN_GAMES) return { ready: false, games: games.length, needed: REPORT_MIN_GAMES };
 
-  const moves = games.reduce((sum, game) => sum + game.decisions, 0);
-  const mistakes = games.flatMap((game) => game.mistakes.map((m) => ({ ...m, gameKey: game.gameKey })));
+  const moves = games.reduce((sum, game) => sum + (game.decisions ?? 0), 0);
+  const mistakes = games.flatMap((game) => (game.mistakes ?? []).map((m) => ({ ...m, gameKey: game.gameKey })));
 
   const rows = THEMES.map((theme, order) => {
     const cases = mistakes.filter((m) => m.theme === theme.id);
@@ -187,14 +197,16 @@ export function weaknessReport(summaries) {
     unrated: mistakes.length - rated.length,
   };
 
+  // Accuracy changed scale in 3.8.2; never mix old Lichess-style summaries into these averages.
+  const accuracyGames = games.filter((g) => g.accuracyVersion === ACCURACY_MODEL_VERSION);
   const phases = Object.fromEntries(PHASES.map((phase) => {
-    const reached = games.filter((g) => g.phaseMoves[phase] > 0 && Number.isFinite(g.phaseAccuracy[phase]));
+    const reached = accuracyGames.filter((g) => g.phaseMoves?.[phase] > 0 && Number.isFinite(g.phaseAccuracy?.[phase]));
     return [phase, {
       games: reached.length,
       accuracy: weightedMean(reached.map((g) => [g.phaseAccuracy[phase], g.phaseMoves[phase]])),
     }];
   }));
-  const overall = weightedMean(games.map((g) => [g.accuracy, g.decisions]));
+  const overall = weightedMean(accuracyGames.map((g) => [g.accuracy, g.decisions]));
 
   const timed = games.filter((g) => g.clock);
   let clock = null;
@@ -218,6 +230,7 @@ export function weaknessReport(summaries) {
 
   return {
     ready: true, games: games.length, moves, mistakes: mistakes.length,
+    accuracyGames: accuracyGames.length, legacyAccuracyGames: games.length - accuracyGames.length,
     themes: { common, lessCommon, focus }, easy, phases, overall, clock, conversion,
   };
 }

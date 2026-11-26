@@ -56,7 +56,7 @@ Each move is graded from Brilliant to Blunder, with the engine's best lines and 
 
 - **Lichess-style chart.** White's edge shades light and Black's dark from a center line. Dots mark every Inaccuracy, Mistake, Miss, and Blunder, and dashed lines mark where the middlegame and endgame begin. Hover for the move and evaluation, or click and drag to move through the game.
 - **Move times.** Games with clock data add a chart of the time spent on each move, with errors colored by grade.
-- **Accuracy and Decision Quality.** Lichess-style accuracy, average centipawn loss, and separate opening, middlegame, and endgame scores. Each grade count jumps to the next move of that grade.
+- **Accuracy and Decision Quality.** Game accuracy uses a Chess.com-compatible CAPS2 calibration; the Lichess-style score and Chess.com's own Game Review score appear under each ring when available. ACPL and separate opening, middlegame, and endgame scores are shown too. Each grade count jumps to the next move of that grade.
 
 ### Comments on every mistake
 
@@ -148,8 +148,9 @@ ChessBot's grading rules and models are tested against deeper searches and held-
 | Find-rate forecast error (Brier score, lower is better) on held-out Lichess games | 0.1305, down from 0.1569 in v3.3 |
 | Same forecast on held-out Chess.com games | 0.1246, down from 0.1421 in v3.3 |
 | Clock-aware expected-score model versus the published Lichess curve | 5.8% lower squared error |
+| Game accuracy versus Chess.com public Game Review labels | 2.6 MAE held-out (24 sides); 4.4 at depth 16 on a harder 46-side check |
 
-The grade-agreement row was measured on the 3.8.0 grade scale. ChessBot 3.8.1 grades on the Lichess win-probability curve; see the note in [docs/benchmarks.md](docs/benchmarks.md#search-depth-and-grade-accuracy) before comparing exact-grade counts.
+The grade-agreement row was measured on the 3.8.0 grade scale. The new game accuracy uses a CAPS2-compatible calibration; the Lichess-style value and Chess.com's own score are shown under each ring when available. See [docs/benchmarks.md](docs/benchmarks.md#chesscom-compatible-game-accuracy).
 
 [How ChessBot works](docs/methodology.md) explains the grading, search, and difficulty models in detail.
 

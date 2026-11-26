@@ -468,6 +468,11 @@ function renderReport() {
       return;
     }
     const parts = [element("p", "report-summary", `Based on ${report.games} games and ${report.moves} of your moves.`)];
+    if (report.legacyAccuracyGames) {
+      parts.push(element("p", "report-empty",
+        `Accuracy uses ${report.accuracyGames} ${report.accuracyGames === 1 ? "game" : "games"} on the current model. ` +
+        `${report.legacyAccuracyGames} older ${report.legacyAccuracyGames === 1 ? "game uses" : "games use"} the previous Lichess-style scale and ${report.legacyAccuracyGames === 1 ? "is" : "are"} excluded from accuracy averages.`));
+    }
 
     const { common, lessCommon, focus } = report.themes;
     const themeRows = common.map((row) => reportRow(row.label,

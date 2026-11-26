@@ -114,10 +114,55 @@ function standardDeviation(values) {
 }
 
 /**
- * Blend the volatility-weighted and harmonic means of scored decisions.
- * The leading moves use the first complete window, as in Lichess's aggregation.
- * As in Lichess's harmonic mean, each move counts as at least 1%: one 0% move would otherwise make the
- * harmonic mean 0 and cap the whole game at half the weighted mean.
+ * Game accuracy model version. Stored with each reviewed game so old summaries on the previous
+ * Lichess-style aggregation are not mixed with the current Chess.com-compatible scale.
+ */
+export const ACCURACY_MODEL_VERSION = 2;
+
+/**
+ * Chess.com publishes CAPS2's intent but not its arithmetic. This curve and power mean were fitted
+ * to public Chess.com `accuracies` labels from 96 rated sides (72 fitting, 24 held out), then checked
+ * on held-out games and at depth 16. CAPS2 is categorical and mostly arithmetic; a power mean around
+ * 0.47 keeps one bad move from crushing the game the way Lichess's harmonic mean does, while still
+ * making it count. Forced moves and sound book moves score 100. See docs/methodology.md and docs/benchmarks.md.
+ */
+export const GAME_ACCURACY_MODEL = Object.freeze({
+  lossScale: 0.04206615,
+  lossExponent: 1.47572392,
+  power: 0.47131702,
+});
+
+/** A move's contribution to game accuracy on the calibrated Chess.com-compatible curve. */
+export function gameMoveScore(winLoss) {
+  if (!Number.isFinite(winLoss)) return 0;
+  return Math.max(0, Math.min(100, 100 * Math.exp(-GAME_ACCURACY_MODEL.lossScale *
+    Math.max(0, winLoss) ** GAME_ACCURACY_MODEL.lossExponent)));
+}
+
+/**
+ * Game accuracy on the Chess.com-compatible scale. `moves` entries need `winLoss`, and may set
+ * `book` or `forced`; either scores 100. `book` is set only for a sound opening-book match;
+ * forced moves offer no choice. A side with only book/forced moves scores 100. The output is rounded to 0.1.
+ */
+export function computeGameAccuracy(moves) {
+  let total = 0;
+  let count = 0;
+  for (const move of moves ?? []) {
+    const exempt = move.book || move.forced;
+    if (!exempt && !Number.isFinite(move.winLoss)) continue;
+    const score = exempt ? 100 : gameMoveScore(move.winLoss);
+    if (!Number.isFinite(score)) continue;
+    total += score ** GAME_ACCURACY_MODEL.power;
+    count++;
+  }
+  if (!count) return null;
+  const blended = (total / count) ** (1 / GAME_ACCURACY_MODEL.power);
+  return Math.round(blended * 10) / 10;
+}
+
+/**
+ * Lichess-style game accuracy kept for comparison and for older saved reviews. Lichess combines
+ * a volatility-weighted mean with a harmonic mean; see its AccuracyPercent source.
  */
 export function computeProGameAccuracy(timeline, playerMoves) {
   if (!playerMoves.length) return null;

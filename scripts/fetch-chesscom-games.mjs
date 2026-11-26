@@ -63,7 +63,7 @@ for (const username of usernames) {
     seen.add(game.url);
     appendFileSync(args.out, JSON.stringify({
       url: game.url, timeClass: game.time_class, timeControl: game.time_control,
-      ratings: { w: game.white.rating, b: game.black.rating }, pgn: game.pgn,
+      ratings: { w: game.white.rating, b: game.black.rating }, accuracies: game.accuracies ?? null, pgn: game.pgn,
     }) + "\n");
     written++;
   }

@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { PEER_PERFORMANCE } from "../performance-data.js";
+import { ACCURACY_MODEL_VERSION } from "../engine.js";
 import { comparePersonalPerformance, peerDecisionPrediction, peerPerformance } from "../performance.js";
 
 const review = (gameKey, accuracy, options = {}) => ({
   gameKey, gameId: 1000, pgn: '[White "BlitzFan"]\n[Black "Opponent"]\n\n1. e4 e5 *',
   color: "w", depth: 16, date: "2026-11-24", reviewedAt: 1, timeClass: "blitz", decisions: 24,
-  result: 1, accuracy, ...options,
+  result: 1, accuracy, accuracyVersion: ACCURACY_MODEL_VERSION, ...options,
 });
 const history = [61, 90, 76, 90, 83].map((accuracy, index) => review(`earlier-${index}`, accuracy));
 
@@ -61,12 +62,14 @@ test("a personal baseline is limited to the 20 most recent eligible reviews", ()
   assert.equal(baseline.medianAccuracy, 80);
 });
 
-test("unfinished reviews cannot enter the personal comparison", () => {
+test("unfinished reviews and older accuracy scales cannot enter the personal comparison", () => {
   const current = review("current", 89);
   const shortHistory = history.slice(0, 4);
   const unfinished = review("unfinished", 100, { result: null });
+  const legacy = review("legacy", 100, { accuracyVersion: 1 });
   const legacyDraw = review("draw", 83, { result: undefined, pgn: `[Result "1/2-1/2"]\n${current.pgn}` });
   assert.equal(comparePersonalPerformance({ current, history: [...shortHistory, unfinished] }), null);
+  assert.equal(comparePersonalPerformance({ current, history: [...shortHistory, legacy] }), null);
   assert.equal(comparePersonalPerformance({ current, history: [...shortHistory, legacyDraw] }).games, 5);
   assert.equal(comparePersonalPerformance({ current: unfinished, history }), null);
 });

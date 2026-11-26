@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { classifyMove, computeProGameAccuracy, formatEval, parseUciInfoLine, StockfishEngine } from '../engine.js';
+import { classifyMove, computeGameAccuracy, computeProGameAccuracy, formatEval, gameMoveScore, parseUciInfoLine, StockfishEngine } from '../engine.js';
+import { CHESSCOM_ACCURACY_FIXTURES } from './fixtures/chesscom-accuracy.js';
 
 const move = {
   playedUci: 'e2e4', bestMoveUci: 'e2e4', winBefore: 61, winAfter: 61,
@@ -54,6 +55,35 @@ test('eval labels round tiny values to zero without a signed zero', () => {
   assert.equal(formatEval({ type: 'cp', value: 5 }), '+0.1');
   assert.equal(formatEval({ type: 'cp', value: -120 }), '-1.2');
   assert.equal(formatEval({ type: 'mate', value: -3 }), '-M3');
+});
+
+test('the Chess.com-compatible game score does not collapse around one bad move', () => {
+  const perfect = Array.from({ length: 30 }, () => ({ winLoss: 0 }));
+  const score = computeGameAccuracy([...perfect, { winLoss: 100 }]);
+  assert.ok(score > 90 && score < 100, `expected a high but imperfect score, got ${score}`);
+  assert.equal(computeGameAccuracy(perfect), 100);
+  assert.equal(computeGameAccuracy([{ winLoss: 100, book: true }, { winLoss: 100, forced: true }]), 100);
+  assert.equal(computeGameAccuracy([]), null);
+  assert.ok(gameMoveScore(0) === 100 && gameMoveScore(20) < gameMoveScore(5));
+});
+
+test('the Chess.com-compatible game score is more forgiving than Lichess on one blunder', () => {
+  const timeline = Array.from({ length: 32 }, (_, i) => 50 + 30 * Math.sin(i / 5));
+  const moves = Array.from({ length: 31 }, (_, i) => ({ ply: i + 1, accuracy: i === 15 ? 2 : 95 }));
+  const lichess = computeProGameAccuracy(timeline, moves);
+  const chesscom = computeGameAccuracy(moves.map((_, i) => ({ winLoss: i === 15 ? 100 : 0 })));
+  assert.ok(chesscom !== null);
+  assert.ok(chesscom > lichess, `${chesscom} should exceed ${lichess}`);
+});
+
+test('the calibrated score stays close to known Chess.com accuracies', () => {
+  for (const fixture of CHESSCOM_ACCURACY_FIXTURES) {
+    for (const color of ['white', 'black']) {
+      const score = computeGameAccuracy(fixture[color]);
+      assert.ok(Math.abs(score - fixture.chesscom[color]) <= 7,
+        `${fixture.name} ${color}: ${score} vs Chess.com ${fixture.chesscom[color]}`);
+    }
+  }
 });
 
 test('volatility uses full opening windows and a zero counts as 1% in the harmonic mean', () => {

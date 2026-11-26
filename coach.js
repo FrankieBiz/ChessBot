@@ -1,4 +1,4 @@
-import { PIECE_VALUES, computeProGameAccuracy, formatEval } from "./engine.js";
+import { PIECE_VALUES, computeGameAccuracy, formatEval } from "./engine.js";
 import { PIECE_NAME, TACTIC_LABEL, describeTactic, tacticName } from "./motifs.js";
 import { describeError } from "./coach-reasons.js";
 
@@ -385,13 +385,15 @@ export function generateLocalCoachInsight({
   };
 }
 
-export function computeGameInsights({ positions, winTimeline, moveReviews, playedColor }) {
+export function computeGameInsights({ positions, moveReviews, playedColor }) {
   const phases = { opening: [], middlegame: [], endgame: [] };
   for (let ply = 1; ply < positions.length; ply++) {
     const review = moveReviews[ply];
-    if (!review || review.forced || positions[ply].move.color !== playedColor) continue;
-    phases[positions[ply - 1].phase].push({ ply, accuracy: review.accuracy });
+    if (!review || positions[ply].move.color !== playedColor) continue;
+    phases[positions[ply - 1].phase].push({
+      winLoss: review.winLoss, book: review.book, forced: review.forced,
+    });
   }
   return Object.fromEntries(Object.entries(phases).map(([phase, moves]) =>
-    [phase, computeProGameAccuracy(winTimeline, moves)]));
+    [phase, computeGameAccuracy(moves)]));
 }

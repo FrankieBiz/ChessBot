@@ -212,6 +212,7 @@ function buildGamePayload(game, gameId, primaryUsername, accountUsername = null)
     timeControl: game.time_control || "",
     rated: Boolean(game.rated),
     endTime: game.end_time || Math.floor(Date.now() / 1000),
+    accuracies: game.accuracies ?? null,
     username: primaryUsername,
     accountUsername,
     playedColor: detectPlayedColor(game, primaryUsername, accountUsername),
