@@ -43,10 +43,22 @@ test('a WDL loss on a grade boundary stays in that grade', () => {
   assert.equal(classifyMove({ ...move, playedUci: 'a2a3', winBefore: 50.2, winAfter: 30.2 }).key, 'mistake');
 });
 
-test('volatility uses full opening windows and a zero remains zero', () => {
-  assert.equal(computeProGameAccuracy([50, 20], [{ ply: 1, accuracy: 0 }]), 0);
+test('volatility uses full opening windows and a zero counts as 1% in the harmonic mean', () => {
+  // Weighted mean 0, harmonic mean 1 / (1 / max(1, 0)) = 1, as in Lichess.
+  assert.equal(computeProGameAccuracy([50, 20], [{ ply: 1, accuracy: 0 }]), 0.5);
   const timeline = [50, 50, 90, ...Array(28).fill(90)];
   assert.equal(computeProGameAccuracy(timeline, [{ ply: 1, accuracy: 80 }, { ply: 2, accuracy: 40 }]), 56.7);
+});
+
+test('one zero-accuracy move does not wipe out the harmonic half of a game', () => {
+  const timeline = Array.from({ length: 60 }, (_, i) => 50 + 30 * Math.sin(i / 6));
+  const moves = (worst) => Array.from({ length: 25 }, (_, k) => ({ ply: 2 + 2 * k, accuracy: k === 12 ? worst : 90 }));
+  const zero = computeProGameAccuracy(timeline, moves(0));
+  // Anything below 1% is treated as 1%, so a near-zero move and a zero move score the same.
+  assert.equal(zero, computeProGameAccuracy(timeline, moves(1)));
+  assert.equal(computeProGameAccuracy(timeline, moves(0.07)), zero);
+  // The harmonic half is 25 / (24 / 90 + 1) ≈ 19.7 rather than 0, so one zero no longer caps the game at 50%.
+  assert.equal(zero, 53);
 });
 
 test('worker searches are serialized and MultiPV candidates share the same completed depth', async () => {

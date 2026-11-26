@@ -4,6 +4,10 @@ All notable changes to ChessBot are recorded here. The format follows [Keep a Ch
 
 ## [Unreleased]
 
+### Fixed
+
+- **One huge blunder no longer halves the accuracy score.** Game accuracy averages a weighted mean and a harmonic mean of each move's accuracy. A move that threw away about 89 or more points of winning chances scored 0%, which made the harmonic mean 0 and capped the game at half the weighted mean, below 50% however well the rest was played. As in Lichess, each move now counts as at least 1% in the harmonic mean. Phase accuracy and the comparison with your earlier games use the same fix. Games you reviewed before keep their saved score until you review them again.
+
 ## [3.8.0] - 2026-11-25
 
 Versions 3.5.0, 3.6.0, and 3.7.0 were never released on their own. This release includes them, so their entries below are part of it too.
