@@ -103,6 +103,8 @@ function standardDeviation(values) {
 /**
  * Blend the volatility-weighted and harmonic means of scored decisions.
  * The leading moves use the first complete window, as in Lichess's aggregation.
+ * As in Lichess's harmonic mean, each move counts as at least 1%: one 0% move would otherwise make the
+ * harmonic mean 0 and cap the whole game at half the weighted mean.
  */
 export function computeProGameAccuracy(timeline, playerMoves) {
   if (!playerMoves.length) return null;
@@ -119,7 +121,7 @@ export function computeProGameAccuracy(timeline, playerMoves) {
     const weight = Math.max(0.5, Math.min(12, sigma));
     weightedSum += accuracy * weight;
     totalWeight += weight;
-    reciprocalSum += 1 / accuracy;
+    reciprocalSum += 1 / Math.max(1, accuracy);
   }
 
   const blended = (weightedSum / totalWeight + playerMoves.length / reciprocalSum) / 2;
